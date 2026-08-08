@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: trickcal_bottleneck
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./DB:/docker-entrypoint-initdb.d:ro
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── 관측성(OTel → Elastic APM) 스택 ──────────────────────────────
+  # 버전 태그(8.15.3)와 apm-server의 OTLP 관련 플래그는 미검증 상태.
+  # 실제로 `docker-compose up` 하기 전에 https://www.elastic.co/docs 에서
+  # 사용 중인 스택 버전 기준 apm-server OTLP 설정을 한 번 더 확인할 것.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false" # 로컬 개발용 — 프로덕션이면 인증 켜야 함
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -Eq '\"status\":\"(green|yellow)\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.3
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+
+  apm-server:
+    image: docker.elastic.co/apm/apm-server:8.15.3
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    # apm-server 8.x는 기본적으로 8200 포트에서 자체 intake 프로토콜과 OTLP를 함께 받는 것으로 알려져 있으나
+    # (별도 grpc/http OTLP 포트 분리가 필요할 수도 있음) — 아래 설정은 최소 구성이고 실제 기동 시
+    # `docker logs apm-server`로 OTLP 리스너가 열렸는지 확인 필요.
+    command: >
+      apm-server -e
+        -E output.elasticsearch.hosts=["elasticsearch:9200"]
+        -E apm-server.host="0.0.0.0:8200"
+        -E strict.perms=false
+    ports:
+      - "8200:8200"
+
+volumes:
+  postgres-data:
+  es-data:

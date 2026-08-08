@@ -1,0 +1,13 @@
+# .NET
+bin/
+obj/
+*.user
+.vs/
+launchSettings.json
+
+# 서버 런타임 로그
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
