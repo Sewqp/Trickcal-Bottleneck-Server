@@ -53,7 +53,7 @@ public sealed class PlayerRepository
     // 계정 생성 시 character_status 전체 캐릭터분을 같은 트랜잭션에서 bulk insert해야 하므로,
     // xmax = 0 트릭으로 "방금 INSERT됐는지 vs 이미 있던 row라 UPDATE만 됐는지"를 구분함
     // (신규 생성일 때만 bulk insert 실행 — 기존 플레이어 재로그인 시 중복 생성 방지)
-    public async Task<long> GetOrCreateByNameAsync(string name)
+    public async Task<(long PlayerId, bool IsNewPlayer)> GetOrCreateByNameAsync(string name)
     {
         await using var conn = DbConnectionPool.Instance.GetConnection();
         await conn.OpenAsync();
@@ -91,7 +91,7 @@ public sealed class PlayerRepository
         }
 
         await tx.CommitAsync();
-        return playerId;
+        return (playerId, inserted);
     }
 
     private static PlayerModel ReadPlayer(NpgsqlDataReader reader) => new()

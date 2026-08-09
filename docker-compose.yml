@@ -1,11 +1,16 @@
 services:
   postgres:
     image: postgres:16
+    # Game-Server-CSharp에서 3만 명 동접 검증 때 겪었던 max_connections 초과(기본값 100) 문제를
+    # 미리 방지 — 앱 풀(ServerConfig.cs, Maximum Pool Size=120)보다 여유 있게 300으로 튜닝.
+    command: ["postgres", "-c", "max_connections=300"]
     environment:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: trickcal_bottleneck
     ports:
-      - "5432:5432"
+      # 5432 대신 5433 — 이 머신에 Game-Server-CSharp용 네이티브 PostgreSQL 서비스가 이미 5432를
+      # 점유하고 있어서, 호스트 포트를 겹치지 않게 분리(TcpPort를 9000→9100으로 분리한 것과 같은 이유)
+      - "5433:5432"
     volumes:
       - ./DB:/docker-entrypoint-initdb.d:ro
       - postgres-data:/var/lib/postgresql/data
@@ -18,7 +23,9 @@ services:
   redis:
     image: redis:7
     ports:
-      - "6379:6379"
+      # 6379 대신 6380 — Game-Server-CSharp용 네이티브 Redis Windows 서비스가 이미 6379를 점유 중이라
+      # 겹치면 GameServer가 그 네이티브 Redis로 잘못 붙어버림(2026-08-10 실제로 겪음). 호스트 포트만 분리.
+      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
