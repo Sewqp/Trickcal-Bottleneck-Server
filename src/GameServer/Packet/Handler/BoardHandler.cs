@@ -1,3 +1,4 @@
+using GameServer.DB;
 using GameServer.DB.Model;
 using GameServer.DB.Repository;
 using GameServer.Network;
@@ -29,9 +30,17 @@ public static class BoardHandler
         int boardNo = BitConverter.ToInt32(p[4..]);
         bool isGlobal = p[8] == 1;
 
-        int cost = isGlobal
-            ? (await BoardRepository.Instance.GetGlobalBoardMasterAsync(characterId, boardNo))?.Cost ?? -1
-            : (await BoardRepository.Instance.GetCharacterBoardMasterAsync(characterId, boardNo))?.Cost ?? -1;
+        int cost = -1, statType = -1, statValue = 0;
+        if (isGlobal)
+        {
+            var master = await BoardRepository.Instance.GetGlobalBoardMasterAsync(characterId, boardNo);
+            if (master is not null) (cost, statType, statValue) = (master.Cost, master.StatType, master.StatValue);
+        }
+        else
+        {
+            var master = await BoardRepository.Instance.GetCharacterBoardMasterAsync(characterId, boardNo);
+            if (master is not null) (cost, statType, statValue) = (master.Cost, master.StatType, master.StatValue);
+        }
 
         bool success = false;
         if (cost >= 0 && await CurrencyRepository.Instance.TrySpendGoldAsync(session.PlayerId, cost))
@@ -40,6 +49,9 @@ public static class BoardHandler
                 await BoardRepository.Instance.UnlockGlobalBoardAsync(session.PlayerId, characterId, boardNo);
             else
                 await BoardRepository.Instance.UnlockCharacterBoardAsync(session.PlayerId, characterId, boardNo);
+
+            await PlayerStatRepository.Instance.IncrementCombatPowerAsync(
+                session.PlayerId, CombatPowerCalculator.FromStatDelta(statType, statValue));
             success = true;
         }
 

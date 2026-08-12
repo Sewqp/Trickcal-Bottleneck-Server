@@ -22,6 +22,7 @@ public sealed class PacketDispatcher
     private static readonly HashSet<PacketId> AllowedWhileLocked = new()
     {
         PacketId.TheaterExitRequest,
+        PacketId.TheaterTouchRequest,
         PacketId.Heartbeat,
         PacketId.ReconnectRequest,
     };

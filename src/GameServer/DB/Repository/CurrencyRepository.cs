@@ -17,6 +17,9 @@ public sealed class CurrencyRepository
 
     private static string CacheKey(long playerId) => $"player:currency:{playerId}";
 
+    // TheaterHandler가 stat/currency 두 키를 하나의 Lua 스크립트로 묶어 원자적으로 다루기 위한 노출
+    public static string GetRedisKey(long playerId) => CacheKey(playerId);
+
     public async Task<PlayerCurrencyModel> GetAsync(long playerId)
     {
         var db = DB.RedisClient.Instance.Db;
@@ -42,15 +45,6 @@ public sealed class CurrencyRepository
 
     public Task<long> IncrementMacaronAsync(long playerId, long delta) =>
         DB.RedisClient.Instance.Db.HashIncrementAsync(CacheKey(playerId), "macaron", delta);
-
-    // 극장 위변조 감지 시 스냅샷 값으로 강제 복구하는 용도 — 델타 누적이 아니라 절대값 덮어쓰기
-    public Task SetAllAsync(long playerId, long gold, long elleaf, long macaron) =>
-        DB.RedisClient.Instance.Db.HashSetAsync(CacheKey(playerId), new HashEntry[]
-        {
-            new("gold", gold),
-            new("elleaf", elleaf),
-            new("macaron", macaron),
-        });
 
     // 가챠 등 "먼저 깎고 그 차감된 값을 기준으로 진행"해야 하는 소비 경로 전용 — 잔액 확인과 차감을
     // Lua 스크립트로 묶어 원자적으로 실행(HINCRBY만으로는 "0 미만 방지" 조건을 못 걺 — 중간에 다른

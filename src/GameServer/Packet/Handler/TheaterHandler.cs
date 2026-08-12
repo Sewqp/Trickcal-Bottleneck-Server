@@ -1,3 +1,4 @@
+using StackExchange.Redis;
 using GameServer.DB.Repository;
 using GameServer.Grains;
 using GameServer.Network;
@@ -9,8 +10,10 @@ namespace GameServer.Packet.Handler;
 // 별도 상태 필드를 안 둠. 트릭컬 스토리는 재생 중 스탯/재화 변화가 없는 컨텐츠라, 퇴장 시점 값이
 // 입장 시점 스냅샷과 다르면 위변조로 간주하고 스냅샷 값으로 강제 복구함.
 //
-// 알려진 한계: 하드 타임아웃(EXIT이 영영 안 오는 경우 자동 락 해제) 안전장치는 아직 구현 안 됨 —
-// 지금은 그레인 락이 걸린 채로 EXIT을 못 받으면 그 플레이어는 하트비트로도 못 끊김. 다음 개선 대상.
+// 하드 타임아웃(EXIT이 영영 안 오는 경우 자동 락 해제) 안전장치: 대사 넘기기(터치)는 클라 로컬
+// 데이터로 진행되고 서버 왕복이 없는 구조라, 터치할 때마다 TheaterTouchRequest로 생존 신호만
+// 보내게 함(HandleTouchAsync, 응답 없음). HeartbeatManager가 주기적으로 마지막 터치 이후 경과
+// 시간(PlayerGrain.GetLockIdleDurationAsync)을 확인해 일정 시간 넘으면 강제 종료함.
 public static class TheaterHandler
 {
     public static async Task HandleEnterAsync(ClientSession session, Memory<byte> packet)
@@ -49,30 +52,11 @@ public static class TheaterHandler
         }
 
         var snapshot = await grain.GetSnapshotAsync();
-        long combatPower = await PlayerStatRepository.Instance.GetCombatPowerAsync(session.PlayerId);
-        var currency = await CurrencyRepository.Instance.GetAsync(session.PlayerId);
-
-        bool tampered = snapshot == null
-            || combatPower != snapshot.CombatPower
-            || currency.Gold != snapshot.Gold
-            || currency.Elleaf != snapshot.Elleaf
-            || currency.Macaron != snapshot.Macaron;
-
-        if (tampered && snapshot != null)
-        {
-            await PlayerStatRepository.Instance.SetCombatPowerAsync(session.PlayerId, snapshot.CombatPower);
-            await CurrencyRepository.Instance.SetAllAsync(session.PlayerId, snapshot.Gold, snapshot.Elleaf, snapshot.Macaron);
-        }
+        bool tampered = snapshot is null || await CheckAndRestoreIfTamperedAsync(session.PlayerId, snapshot);
 
         await grain.UnlockAsync(); // 처리 완료 신호 — 여기서 락 해제
 
-        var final = snapshot ?? new TheaterSnapshot
-        {
-            CombatPower = combatPower,
-            Gold = currency.Gold,
-            Elleaf = currency.Elleaf,
-            Macaron = currency.Macaron,
-        };
+        var final = snapshot ?? new TheaterSnapshot(); // snapshot 자체가 없는 건 그레인 상태 이상 — 방어적 처리
 
         // payload: [1B tampered][8B combatPower][8B gold][8B elleaf][8B macaron]
         var result = new byte[33];
@@ -82,5 +66,47 @@ public static class TheaterHandler
         BitConverter.TryWriteBytes(result.AsSpan(17), final.Elleaf);
         BitConverter.TryWriteBytes(result.AsSpan(25), final.Macaron);
         await session.SendAsync(PacketWriter.Build(PacketId.TheaterExitResult, result));
+    }
+
+    // 대사 넘기기(터치)마다 클라가 보내는 생존 신호 — 오프라인(클라 로컬) 데이터로 진행되는 구조라
+    // 서버 왕복이 원래 없는 지점에 하드 타임아웃 판정용으로만 추가한 것. 응답 없음(fire-and-forget).
+    public static async Task HandleTouchAsync(ClientSession session, Memory<byte> packet)
+    {
+        var grain = OrleansClient.Instance.Factory.GetGrain<IPlayerGrain>(session.PlayerId);
+        await grain.TouchAsync();
+    }
+
+    // 스탯(STRING) 키와 재화(HASH) 키 두 개를 하나의 Lua 스크립트로 묶어 "현재값 읽기 → 스냅샷과 비교 →
+    // 다르면 즉시 덮어쓰기"를 원자적으로 처리. 예전엔 GetCombatPowerAsync/GetAsync(읽기) → C# 비교 →
+    // SetCombatPowerAsync/SetAllAsync(쓰기)로 4번의 별도 redis 왕복에 걸쳐 있어서, 그 사이에 다른 재화
+    // 연산이 끼어들면 lost update가 날 수 있었음(PacketDispatcher 락 게이트로 지금은 트리거 경로가
+    // 없어졌지만, 새 핸들러가 락 체크를 빠뜨리는 실수를 해도 깨지지 않도록 여기서 근본적으로 막음).
+    private const string CheckAndRestoreScript = """
+        local curPower = tonumber(redis.call('GET', KEYS[1]) or '0')
+        local curGold = tonumber(redis.call('HGET', KEYS[2], 'gold') or '0')
+        local curElleaf = tonumber(redis.call('HGET', KEYS[2], 'elleaf') or '0')
+        local curMacaron = tonumber(redis.call('HGET', KEYS[2], 'macaron') or '0')
+
+        local snapPower = tonumber(ARGV[1])
+        local snapGold = tonumber(ARGV[2])
+        local snapElleaf = tonumber(ARGV[3])
+        local snapMacaron = tonumber(ARGV[4])
+
+        if curPower ~= snapPower or curGold ~= snapGold or curElleaf ~= snapElleaf or curMacaron ~= snapMacaron then
+            redis.call('SET', KEYS[1], snapPower)
+            redis.call('HSET', KEYS[2], 'gold', snapGold, 'elleaf', snapElleaf, 'macaron', snapMacaron)
+            return 1
+        end
+        return 0
+        """;
+
+    private static async Task<bool> CheckAndRestoreIfTamperedAsync(long playerId, TheaterSnapshot snapshot)
+    {
+        var db = DB.RedisClient.Instance.Db;
+        var result = await db.ScriptEvaluateAsync(
+            CheckAndRestoreScript,
+            new RedisKey[] { PlayerStatRepository.GetRedisKey(playerId), CurrencyRepository.GetRedisKey(playerId) },
+            new RedisValue[] { snapshot.CombatPower, snapshot.Gold, snapshot.Elleaf, snapshot.Macaron });
+        return (long)result == 1;
     }
 }

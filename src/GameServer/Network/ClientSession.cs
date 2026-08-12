@@ -73,7 +73,12 @@ public sealed class ClientSession
             if (guildId.HasValue)
                 await OrleansClient.Instance.Factory.GetGrain<IGuildGrain>(guildId.Value).MemberOfflineAsync(PlayerId);
 
-            await OrleansClient.Instance.Factory.GetGrain<IPlayerGrain>(PlayerId).OnDisconnectAsync();
+            var grain = OrleansClient.Instance.Factory.GetGrain<IPlayerGrain>(PlayerId);
+            await grain.OnDisconnectAsync();
+            // 정상 종료/비정상 종료(크래시 등 TCP 레벨 끊김) 둘 다 이 경로 하나로 처리됨 —
+            // 가챠/극장 처리 중 끊기면 그레인 락이 영영 안 풀리는 걸 막기 위해 여기서 항상 해제.
+            // UnlockAsync는 멱등이라 애초에 안 걸려있었어도 안전.
+            await grain.UnlockAsync();
         }
 
         SessionManager.Instance.UnregisterPlayerId(PlayerId);

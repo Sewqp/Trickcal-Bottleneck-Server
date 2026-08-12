@@ -189,6 +189,28 @@ public sealed class CharacterRepository
         return acquiredIds;
     }
 
+    // 전투력 계산용 — base_stat(레벨 1 기준)/stat_growth_table(레벨업 1회당 증가량) 원본 JSON 그대로 반환,
+    // 파싱은 CombatPowerCalculator.StatVector.Parse가 호출부에서 담당(CharacterInfoModel 주석 참고).
+    public async Task<CharacterInfoModel?> GetCharacterInfoAsync(int characterId)
+    {
+        await using var conn = DbConnectionPool.Instance.GetConnection();
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            "SELECT character_id, info, base_stat, stat_growth_table FROM character_info WHERE character_id = @cid";
+        cmd.Parameters.AddWithValue("@cid", characterId);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+        return new CharacterInfoModel
+        {
+            CharacterId = reader.GetInt32(0),
+            InfoJson = reader.GetString(1),
+            BaseStatJson = reader.GetString(2),
+            StatGrowthTableJson = reader.GetString(3),
+        };
+    }
+
     // 가챠용 — 전체 캐릭터 마스터 ID 목록(중복 허용 뽑기이므로 미보유로 미리 필터링하지 않음).
     // 독립시행(복원추출) 방식 랜덤 추첨 자체는 여기서 안 함 — 그건 순수 알고리즘이라 Handler
     // 레이어가 이 목록을 받아서 처리(Repository는 원시 데이터 접근만 담당).

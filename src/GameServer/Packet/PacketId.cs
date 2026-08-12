@@ -9,6 +9,7 @@ public enum PacketId : ushort
     TheaterEnterResult  = 2001,
     TheaterExitRequest  = 2002,
     TheaterExitResult   = 2003,
+    TheaterTouchRequest = 2004, // 응답 없음(fire-and-forget) — 생명주기 갱신 전용 신호
 
     MatchRequest       = 3000,
     MatchResult        = 3001,

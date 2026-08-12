@@ -1,3 +1,4 @@
+using GameServer.DB;
 using GameServer.DB.Model;
 using GameServer.DB.Repository;
 using GameServer.Network;
@@ -47,7 +48,20 @@ public static class CharacterHandler
             long cost = CalculateEnhanceCost(currentLevel, reportedLevel);
             success = await CurrencyRepository.Instance.TrySpendMacaronAsync(session.PlayerId, cost);
             if (success)
+            {
                 await CharacterRepository.Instance.SetLevelAsync(session.PlayerId, characterId, reportedLevel);
+
+                // stat_growth_table은 "레벨업 1회당 증가량" 고정값 — 오른 레벨 수만큼 곱해 스탯 델타를
+                // 구하고, 공식이 선형이라 그 델타 하나만 전투력으로 환산해도 전체 재계산과 동일함
+                var info = await CharacterRepository.Instance.GetCharacterInfoAsync(characterId);
+                if (info is not null)
+                {
+                    var growth = CombatPowerCalculator.StatVector.Parse(info.StatGrowthTableJson);
+                    var delta = growth * (reportedLevel - currentLevel);
+                    await PlayerStatRepository.Instance.IncrementCombatPowerAsync(
+                        session.PlayerId, CombatPowerCalculator.FromStats(delta));
+                }
+            }
         }
 
         int finalLevel = success ? reportedLevel : currentLevel;

@@ -61,6 +61,7 @@ dispatcher.Register(PacketId.ItemUseRequest,     ItemHandler.HandleUseAsync);
 
 dispatcher.Register(PacketId.TheaterEnterRequest, TheaterHandler.HandleEnterAsync);
 dispatcher.Register(PacketId.TheaterExitRequest,  TheaterHandler.HandleExitAsync);
+dispatcher.Register(PacketId.TheaterTouchRequest, TheaterHandler.HandleTouchAsync);
 
 dispatcher.Register(PacketId.CharacterListRequest,         CharacterHandler.HandleListRequestAsync);
 dispatcher.Register(PacketId.CharacterEnhanceEnterRequest, CharacterHandler.HandleEnhanceEnterAsync);

@@ -1,3 +1,4 @@
+using GameServer.DB;
 using GameServer.DB.Repository;
 using GameServer.Grains;
 using GameServer.Network;
@@ -43,6 +44,16 @@ public static class GachaHandler
             var distinctDraws = draws.Distinct().ToArray();
             var acquiredIds = new HashSet<int>(
                 await CharacterRepository.Instance.AcquireCharactersAsync(session.PlayerId, distinctDraws));
+
+            // 신규 획득 캐릭터는 레벨 1(base_stat 그대로) 기준 전투력을 플레이어 총 전투력에 가산
+            foreach (var cid in acquiredIds)
+            {
+                var info = await CharacterRepository.Instance.GetCharacterInfoAsync(cid);
+                if (info is null) continue;
+                var baseStat = CombatPowerCalculator.StatVector.Parse(info.BaseStatJson);
+                await PlayerStatRepository.Instance.IncrementCombatPowerAsync(
+                    session.PlayerId, CombatPowerCalculator.FromStats(baseStat));
+            }
 
             var seen = new HashSet<int>();
             var isNew = new bool[PullCount];

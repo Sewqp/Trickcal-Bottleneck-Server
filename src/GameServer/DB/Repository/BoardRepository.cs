@@ -82,6 +82,7 @@ public sealed class BoardRepository
                 Status = (byte)(long)e.Value,
             });
         }
+        result.Sort((a, b) => a.BoardNo.CompareTo(b.BoardNo));
         return result;
     }
 
@@ -101,6 +102,9 @@ public sealed class BoardRepository
                 Status = (byte)(long)e.Value,
             });
         }
+        result.Sort((a, b) => a.CharacterId != b.CharacterId
+            ? a.CharacterId.CompareTo(b.CharacterId)
+            : a.BoardNo.CompareTo(b.BoardNo));
         return result;
     }
 
