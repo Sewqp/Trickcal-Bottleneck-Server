@@ -17,6 +17,9 @@ public sealed class ClientSession
 
     public Guid SessionId { get; } = Guid.NewGuid();
     public long PlayerId { get; set; }
+    // 로그인 기믹(LoginHandler) — 로그인 이름이 "admin"이면 세션에 이 플래그가 붙음. 실제 인증/권한
+    // 체계가 아니라, DebugHandler처럼 "어드민 전용이어야 하는데 체크가 빠진" 버그를 재현하기 위한 표식.
+    public bool IsAdmin { get; set; }
     public DateTime LastReceivedAt { get; private set; } = DateTime.UtcNow;
 
     public void UpdateLastReceived() => LastReceivedAt = DateTime.UtcNow;
@@ -72,6 +75,11 @@ public sealed class ClientSession
             var guildId = await GuildRepository.Instance.GetGuildIdByPlayerAsync(PlayerId);
             if (guildId.HasValue)
                 await OrleansClient.Instance.Factory.GetGrain<IGuildGrain>(guildId.Value).MemberOfflineAsync(PlayerId);
+
+            // 매칭 대기열에 남아있으면(매칭 상대를 못 만난 채 끊긴 경우) 큐에서 제거 — 안 그러면 나중에
+            // 접속한 다른 플레이어가 이미 끊긴 이 플레이어와 "매칭 성사"로 묶여버림(죽은 세션과 매칭되는
+            // 버그). CancelMatchAsync는 없으면 그냥 무시하는 멱등 연산이라 매칭 대기 중이 아니었어도 안전.
+            await OrleansClient.Instance.Factory.GetGrain<IMatchGrain>(0).CancelMatchAsync(PlayerId);
 
             var grain = OrleansClient.Instance.Factory.GetGrain<IPlayerGrain>(PlayerId);
             await grain.OnDisconnectAsync();

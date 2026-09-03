@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using GameServer.Grains;
+using GameServer.Metrics;
 using GameServer.Network;
 
 namespace GameServer.Packet;
@@ -48,6 +50,27 @@ public sealed class PacketDispatcher
             if (await grain.IsLockedAsync()) return;
         }
 
-        await handler(session, packet);
+        var stopwatch = Stopwatch.StartNew();
+        var success = true;
+        try
+        {
+            await handler(session, packet);
+        }
+        catch
+        {
+            success = false;
+            throw;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            ApmReporter.Instance.Report(id.ToString(), stopwatch.Elapsed.TotalMilliseconds, success);
+
+            // 데모 추적 전용 — "화면 전환"에 대응하는 서버 측 실체가 없어서(맵/이동 시스템이 없는 게임),
+            // 클라가 보내는 요청 패킷 자체를 화면 전환의 근사치로 씀. Heartbeat/TheaterTouch는 생존
+            // 신호일 뿐이라 제외 — 안 그러면 실제 행동 로그가 하트비트에 묻힘.
+            if (id != PacketId.Heartbeat && id != PacketId.TheaterTouchRequest)
+                PlayerWatcher.Log(session.PlayerId, $"{id} ({(success ? "OK" : "FAIL")}, {stopwatch.Elapsed.TotalMilliseconds:F1}ms)");
+        }
     }
 }

@@ -13,6 +13,7 @@ public enum PacketId : ushort
 
     MatchRequest       = 3000,
     MatchResult        = 3001,
+    MatchCancelRequest = 3002, // 응답 없음(fire-and-forget) — 클라가 대기를 포기했을 때 큐에서 빼달라는 신호
 
     ItemAcquireRequest = 4000,
     ItemAcquireResult  = 4001,
@@ -49,4 +50,10 @@ public enum PacketId : ushort
     Heartbeat          = 9000,
     ReconnectRequest   = 9001,
     ReconnectResult    = 9002,
+
+    // 테스트 더미 전용 — 실서비스엔 없을 디버그 치트. 어드민 세션(로그인 이름이 "admin")에서만
+    // 정상 동작하도록 의도했지만, DebugHandler에 그 체크가 없어 비-어드민도 재화를 받아감(의도된 버그,
+    // apm+Graphify가 이 핸들러를 원인 코드로 짚어내는지 검증하기 위한 테스트 케이스).
+    DebugGrantCurrencyRequest = 9100,
+    DebugGrantCurrencyResult  = 9101,
 }

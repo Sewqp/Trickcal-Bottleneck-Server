@@ -60,7 +60,14 @@ public sealed class CurrencyRepository
 
     public Task<bool> TrySpendGoldAsync(long playerId, long amount) => TrySpendAsync(playerId, "gold", amount);
 
-    public Task<bool> TrySpendElleafAsync(long playerId, long amount) => TrySpendAsync(playerId, "elleaf", amount);
+    public async Task<bool> TrySpendElleafAsync(long playerId, long amount)
+    {
+        bool ok = await TrySpendAsync(playerId, "elleaf", amount);
+        // 데모 추적 전용 — Watch 대상 플레이어의 엘리프 소비만 콘솔에 찍음(다른 플레이어는 IsWatched가
+        // 항상 false라 비교 한 번으로 끝남, 병목 아님)
+        if (ok) Network.PlayerWatcher.Log(playerId, $"엘리프 {amount} 사용");
+        return ok;
+    }
 
     public Task<bool> TrySpendMacaronAsync(long playerId, long amount) => TrySpendAsync(playerId, "macaron", amount);
 

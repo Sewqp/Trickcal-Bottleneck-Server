@@ -15,7 +15,7 @@ public static class CharacterHandler
         await session.SendAsync(PacketWriter.Build(PacketId.CharacterListResult, BuildListPayload(list)));
     }
 
-    // UI 진입 — 현재 레벨/마카롱 잔량 전달(design-plan-draft.md 4장)
+    // UI 진입 — 현재 레벨/마카롱·골드 잔량 전달(design-plan-draft.md 4장)
     public static async Task HandleEnhanceEnterAsync(ClientSession session, Memory<byte> packet)
     {
         if (packet.Length < PacketHeader.HeaderSize + 4) return;
@@ -24,15 +24,18 @@ public static class CharacterHandler
         int level = await CharacterRepository.Instance.GetLevelAsync(session.PlayerId, characterId);
         var currency = await CurrencyRepository.Instance.GetAsync(session.PlayerId);
 
-        // payload: [4B characterId][4B level][8B macaron]
-        var result = new byte[16];
+        // payload: [4B characterId][4B level][8B macaron][8B gold]
+        var result = new byte[24];
         BitConverter.TryWriteBytes(result.AsSpan(0), characterId);
         BitConverter.TryWriteBytes(result.AsSpan(4), level);
         BitConverter.TryWriteBytes(result.AsSpan(8), currency.Macaron);
+        BitConverter.TryWriteBytes(result.AsSpan(16), currency.Gold);
         await session.SendAsync(PacketWriter.Build(PacketId.CharacterEnhanceEnterResult, result));
     }
 
-    // UI 이탈 — 클라가 보낸 "M→N"은 트리거일 뿐, 실제 차감은 항상 서버가 고정 공식으로 재계산한 값 기준
+    // UI 이탈 — 클라가 보낸 "M→N"은 트리거일 뿐, 실제 차감은 항상 서버가 고정 공식으로 재계산한 값 기준.
+    // 마카롱+골드 두 재화를 같이 씀 — 마카롱을 먼저 차감해보고, 골드가 부족하면 마카롱만 환불(두 재화를
+    // 하나의 Lua 스크립트로 묶는 원자적 방식까지는 이 규모에서 과함, 실패 시 보상 환불로 충분).
     public static async Task HandleEnhanceExitAsync(ClientSession session, Memory<byte> packet)
     {
         if (packet.Length < PacketHeader.HeaderSize + 8) return;
@@ -42,24 +45,40 @@ public static class CharacterHandler
 
         int currentLevel = await CharacterRepository.Instance.GetLevelAsync(session.PlayerId, characterId);
         bool success = false;
+        long macaronSpentAmount = 0;
+        long goldSpentAmount = 0;
 
         if (reportedLevel > currentLevel)
         {
-            long cost = CalculateEnhanceCost(currentLevel, reportedLevel);
-            success = await CurrencyRepository.Instance.TrySpendMacaronAsync(session.PlayerId, cost);
-            if (success)
-            {
-                await CharacterRepository.Instance.SetLevelAsync(session.PlayerId, characterId, reportedLevel);
+            long macaronCost = CalculateEnhanceMacaronCost(currentLevel, reportedLevel);
+            long goldCost = CalculateEnhanceGoldCost(currentLevel, reportedLevel);
 
-                // stat_growth_table은 "레벨업 1회당 증가량" 고정값 — 오른 레벨 수만큼 곱해 스탯 델타를
-                // 구하고, 공식이 선형이라 그 델타 하나만 전투력으로 환산해도 전체 재계산과 동일함
-                var info = await CharacterRepository.Instance.GetCharacterInfoAsync(characterId);
-                if (info is not null)
+            bool macaronSpent = await CurrencyRepository.Instance.TrySpendMacaronAsync(session.PlayerId, macaronCost);
+            if (macaronSpent)
+            {
+                bool goldSpent = await CurrencyRepository.Instance.TrySpendGoldAsync(session.PlayerId, goldCost);
+                if (goldSpent)
                 {
-                    var growth = CombatPowerCalculator.StatVector.Parse(info.StatGrowthTableJson);
-                    var delta = growth * (reportedLevel - currentLevel);
-                    await PlayerStatRepository.Instance.IncrementCombatPowerAsync(
-                        session.PlayerId, CombatPowerCalculator.FromStats(delta));
+                    success = true;
+                    macaronSpentAmount = macaronCost;
+                    goldSpentAmount = goldCost;
+                    await CharacterRepository.Instance.SetLevelAsync(session.PlayerId, characterId, reportedLevel);
+
+                    // stat_growth_table은 "레벨업 1회당 증가량" 고정값 — 오른 레벨 수만큼 곱해 스탯 델타를
+                    // 구하고, 공식이 선형이라 그 델타 하나만 전투력으로 환산해도 전체 재계산과 동일함
+                    var info = await CharacterRepository.Instance.GetCharacterInfoAsync(characterId);
+                    if (info is not null)
+                    {
+                        var growth = CombatPowerCalculator.StatVector.Parse(info.StatGrowthTableJson);
+                        var delta = growth * (reportedLevel - currentLevel);
+                        await PlayerStatRepository.Instance.IncrementCombatPowerAsync(
+                            session.PlayerId, CombatPowerCalculator.FromStats(delta));
+                    }
+                }
+                else
+                {
+                    // 골드가 부족해 전체 강화가 취소됨 — 이미 차감된 마카롱을 환불했으므로 실제 소모량은 0
+                    await CurrencyRepository.Instance.IncrementMacaronAsync(session.PlayerId, macaronCost);
                 }
             }
         }
@@ -67,21 +86,32 @@ public static class CharacterHandler
         int finalLevel = success ? reportedLevel : currentLevel;
         var currency = await CurrencyRepository.Instance.GetAsync(session.PlayerId);
 
-        // payload: [1B success][4B level][8B macaron]
-        var result = new byte[13];
+        // payload: [1B success][4B level][8B macaron][8B gold][8B macaronSpent][8B goldSpent]
+        var result = new byte[37];
         result[0] = (byte)(success ? 1 : 0);
         BitConverter.TryWriteBytes(result.AsSpan(1), finalLevel);
         BitConverter.TryWriteBytes(result.AsSpan(5), currency.Macaron);
+        BitConverter.TryWriteBytes(result.AsSpan(13), currency.Gold);
+        BitConverter.TryWriteBytes(result.AsSpan(21), macaronSpentAmount);
+        BitConverter.TryWriteBytes(result.AsSpan(29), goldSpentAmount);
         await session.SendAsync(PacketWriter.Build(PacketId.CharacterEnhanceExitResult, result));
     }
 
-    // 실 밸런스 데이터가 없어 임시 선형 공식(레벨 하나 올릴 때마다 10 * 목표레벨) — 나중에
+    // 실 밸런스 데이터가 없어 임시 선형 공식(레벨 하나 올릴 때마다 N * 목표레벨) — 나중에
     // character_info.stat_growth_table 기반 실제 테이블로 교체 가능하게 이 함수 하나로 고립시켜둠
-    private static long CalculateEnhanceCost(int fromLevel, int toLevel)
+    private static long CalculateEnhanceMacaronCost(int fromLevel, int toLevel)
     {
         long cost = 0;
         for (int level = fromLevel + 1; level <= toLevel; level++)
             cost += 10L * level;
+        return cost;
+    }
+
+    private static long CalculateEnhanceGoldCost(int fromLevel, int toLevel)
+    {
+        long cost = 0;
+        for (int level = fromLevel + 1; level <= toLevel; level++)
+            cost += 20L * level;
         return cost;
     }
 

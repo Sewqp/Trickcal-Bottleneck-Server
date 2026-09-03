@@ -1,0 +1,10 @@
+# Unity가 재생성하는 폴더 — 커밋 대상 아님
+Library/
+Temp/
+Obj/
+Logs/
+UserSettings/
+Build/
+*.csproj
+*.sln
+*.tmp

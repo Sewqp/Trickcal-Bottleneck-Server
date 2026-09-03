@@ -1,4 +1,5 @@
 using System.Text;
+using GameServer.Config;
 using GameServer.DB;
 using GameServer.DB.Repository;
 using GameServer.Grains;
@@ -23,6 +24,18 @@ public static class LoginHandler
 
         var (playerId, isNewPlayer) = await PlayerRepository.Instance.GetOrCreateByNameAsync(name);
         await session.AttachPlayerAsync(playerId);
+
+        // 로그인 기믹: "admin" 이름으로 로그인하면 세션에 어드민 플래그가 붙음(테스트용, 실제 인증 아님)
+        session.IsAdmin = name.Equals("admin", StringComparison.OrdinalIgnoreCase);
+
+        // 데모/영상 녹화 전용 — ServerConfig.WatchPlayerName과 이름이 일치하는 딱 한 명만 PlayerWatcher가
+        // 콘솔에 자세히 찍음(PacketDispatcher의 화면 전환 로그, CurrencyRepository의 엘리프 소비 로그)
+        if (!string.IsNullOrEmpty(ServerConfig.Instance.WatchPlayerName) &&
+            name.Equals(ServerConfig.Instance.WatchPlayerName, StringComparison.OrdinalIgnoreCase))
+        {
+            PlayerWatcher.SetWatched(playerId);
+            Console.WriteLine($"[WATCH pid={playerId}] '{name}' 로그인 — 이 플레이어를 추적합니다.");
+        }
 
         // PlayerStatRepository/CurrencyRepository는 "세션 시작 시 먼저 로드해서 redis 캐시를
         // 채워둔다"는 전제로 동작함 — 여기서 미리 불러와 두지 않으면 이후 Increment/TrySpend가
