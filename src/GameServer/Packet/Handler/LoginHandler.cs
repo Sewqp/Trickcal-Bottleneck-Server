@@ -25,8 +25,11 @@ public static class LoginHandler
         var (playerId, isNewPlayer) = await PlayerRepository.Instance.GetOrCreateByNameAsync(name);
         await session.AttachPlayerAsync(playerId);
 
-        // 로그인 기믹: "admin" 이름으로 로그인하면 세션에 어드민 플래그가 붙음(테스트용, 실제 인증 아님)
-        session.IsAdmin = name.Equals("admin", StringComparison.OrdinalIgnoreCase);
+        // 로그인 기믹: 이름이 "admin"으로 시작하면 세션에 어드민 플래그가 붙음(테스트용, 실제 인증 아님).
+        // "admin1"/"admin2"처럼 접미사를 다르게 주면 서로 다른 playerId를 쓰면서도 둘 다 어드민 혜택을
+        // 받을 수 있음 — 데모에서 클라 여러 개를 동시에 admin으로 띄울 때 이름이 겹쳐서 같은 캐릭터를
+        // 공유하는 문제를 피하기 위함.
+        session.IsAdmin = name.StartsWith("admin", StringComparison.OrdinalIgnoreCase);
 
         // 데모/영상 녹화 전용 — ServerConfig.WatchPlayerName과 이름이 일치하는 딱 한 명만 PlayerWatcher가
         // 콘솔에 자세히 찍음(PacketDispatcher의 화면 전환 로그, CurrencyRepository의 엘리프 소비 로그)
