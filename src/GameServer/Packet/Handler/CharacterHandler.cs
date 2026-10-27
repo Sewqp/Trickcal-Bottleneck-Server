@@ -18,7 +18,7 @@ public static class CharacterHandler
     // UI 진입 — 현재 레벨/마카롱·골드 잔량 전달(design-plan-draft.md 4장)
     public static async Task HandleEnhanceEnterAsync(ClientSession session, Memory<byte> packet)
     {
-        if (packet.Length < PacketHeader.HeaderSize + 4) return;
+        if (packet.Length < PacketHeader.HeaderSize + 4) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
         int characterId = BitConverter.ToInt32(packet.Span[PacketHeader.HeaderSize..]);
 
         int level = await CharacterRepository.Instance.GetLevelAsync(session.PlayerId, characterId);
@@ -38,7 +38,7 @@ public static class CharacterHandler
     // 하나의 Lua 스크립트로 묶는 원자적 방식까지는 이 규모에서 과함, 실패 시 보상 환불로 충분).
     public static async Task HandleEnhanceExitAsync(ClientSession session, Memory<byte> packet)
     {
-        if (packet.Length < PacketHeader.HeaderSize + 8) return;
+        if (packet.Length < PacketHeader.HeaderSize + 8) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
         var p = packet.Span[PacketHeader.HeaderSize..];
         int characterId = BitConverter.ToInt32(p);
         int reportedLevel = BitConverter.ToInt32(p[4..]);

@@ -9,10 +9,10 @@ public static class GuildHandler
 {
     public static async Task HandleCreateAsync(ClientSession session, Memory<byte> packet)
     {
-        if (packet.Length < PacketHeader.HeaderSize + 2) return;
+        if (packet.Length < PacketHeader.HeaderSize + 2) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
         var payload = packet.Span[PacketHeader.HeaderSize..];
         ushort nameLen = BitConverter.ToUInt16(payload);
-        if (payload.Length < 2 + nameLen) return;
+        if (payload.Length < 2 + nameLen) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
         var name = Encoding.UTF8.GetString(payload.Slice(2, nameLen));
 
         var guildId = await GuildRepository.Instance.CreateAsync(name, session.PlayerId);
@@ -29,7 +29,7 @@ public static class GuildHandler
 
     public static async Task HandleJoinAsync(ClientSession session, Memory<byte> packet)
     {
-        if (packet.Length < PacketHeader.HeaderSize + 8) return;
+        if (packet.Length < PacketHeader.HeaderSize + 8) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
         long guildId = BitConverter.ToInt64(packet.Span[PacketHeader.HeaderSize..]);
 
         bool success = await GuildRepository.Instance.JoinAsync(guildId, session.PlayerId);
@@ -41,7 +41,7 @@ public static class GuildHandler
 
     public static async Task HandleLeaveAsync(ClientSession session, Memory<byte> packet)
     {
-        if (packet.Length < PacketHeader.HeaderSize + 8) return;
+        if (packet.Length < PacketHeader.HeaderSize + 8) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
         long guildId = BitConverter.ToInt64(packet.Span[PacketHeader.HeaderSize..]);
 
         bool success = await GuildRepository.Instance.LeaveAsync(guildId, session.PlayerId);
@@ -53,7 +53,7 @@ public static class GuildHandler
 
     public static async Task HandleInfoRequestAsync(ClientSession session, Memory<byte> packet)
     {
-        if (packet.Length < PacketHeader.HeaderSize + 8) return;
+        if (packet.Length < PacketHeader.HeaderSize + 8) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
         long guildId = BitConverter.ToInt64(packet.Span[PacketHeader.HeaderSize..]);
 
         var guild = await GuildRepository.Instance.GetByIdAsync(guildId);

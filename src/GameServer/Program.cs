@@ -29,6 +29,7 @@ Console.CancelKeyPress += (_, e) =>
 
 AsyncLogger.Instance.Init(cts.Token);
 ApmReporter.Instance.Init(config.ApmCollectorEndpoint, config.OrleansServiceId, cts.Token);
+await using var apmReporter = ApmReporter.Instance;
 
 DbConnectionPool.Instance.Init(config.PostgresConnectionString);
 Console.WriteLine("[DB] PostgreSQL connection pool ready.");
@@ -72,9 +73,10 @@ hostBuilder.UseOrleans(silo =>
 hostBuilder.Services.AddOpenTelemetry()
     .ConfigureResource(r => r.AddService(config.OrleansServiceId))
     .WithTracing(tracing => tracing
-        .AddSource("Microsoft.Orleans.Runtime", "Microsoft.Orleans.Application")
+        .AddSource("Microsoft.Orleans.Runtime", "Microsoft.Orleans.Application", Apm.Agent.LocalTelemetry.SourceName)
         .AddNpgsql()
-        .AddRedisInstrumentation(RedisClient.Instance.Multiplexer)
+        .AddRedisInstrumentation(RedisClient.Instance.Multiplexer,
+            options => options.FlushInterval = TimeSpan.FromMilliseconds(100))
         .AddOtlpExporter(o => o.Endpoint = new Uri(config.OtlpEndpoint)));
 
 using var host = hostBuilder.Build();

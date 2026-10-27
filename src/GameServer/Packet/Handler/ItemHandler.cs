@@ -11,7 +11,7 @@ public static class ItemHandler
 
     public static async Task HandleAcquireAsync(ClientSession session, Memory<byte> packet)
     {
-        if (packet.Length < PacketHeader.HeaderSize + 8) return;
+        if (packet.Length < PacketHeader.HeaderSize + 8) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
         var p = packet.Span[PacketHeader.HeaderSize..];
         int itemDefId = BitConverter.ToInt32(p);
         int count = BitConverter.ToInt32(p[4..]);
@@ -32,7 +32,7 @@ public static class ItemHandler
 
     public static async Task HandleUseAsync(ClientSession session, Memory<byte> packet)
     {
-        if (packet.Length < PacketHeader.HeaderSize + 12) return;
+        if (packet.Length < PacketHeader.HeaderSize + 12) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
         var p = packet.Span[PacketHeader.HeaderSize..];
         long inventoryId = BitConverter.ToInt64(p);
         int count = BitConverter.ToInt32(p[8..]);

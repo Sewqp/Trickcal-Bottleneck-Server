@@ -20,4 +20,7 @@ public sealed class RedisClient
     public IDatabase Db => _db ?? throw new InvalidOperationException("RedisClient is not initialized.");
 
     public bool IsConnected => _multiplexer?.IsConnected ?? false;
+
+    // OTel StackExchangeRedis 계측(AddRedisInstrumentation)이 span을 걸려면 이 인스턴스가 필요함
+    public ConnectionMultiplexer Multiplexer => _multiplexer ?? throw new InvalidOperationException("RedisClient is not initialized.");
 }

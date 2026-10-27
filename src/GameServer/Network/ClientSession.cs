@@ -1,3 +1,5 @@
+using Apm.Agent;
+using GameServer.Metrics;
 using System.Net.Sockets;
 using GameServer.DB;
 using GameServer.DB.Repository;
@@ -53,10 +55,13 @@ public sealed class ClientSession
 
     public async Task SendAsync(byte[] data)
     {
-        await _sendLock.WaitAsync(_ct);
+        using var send = LocalTelemetry.StartSpan("response.send", "network");
+        using (LocalTelemetry.StartSpan("response.send_lock", "wait"))
+            await _sendLock.WaitAsync(_ct);
         try
         {
             await _stream.WriteAsync(data, _ct);
+            ApmReporter.RecordResponse(data);
         }
         finally
         {

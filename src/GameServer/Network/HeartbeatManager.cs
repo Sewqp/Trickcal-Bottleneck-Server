@@ -1,3 +1,4 @@
+using Apm.Agent;
 using GameServer.DB;
 using GameServer.Grains;
 
@@ -28,6 +29,9 @@ public sealed class HeartbeatManager
                 break;
             }
 
+            using var sweep = LocalTelemetry.StartSpan("HeartbeatManager.Sweep", "background");
+            sweep?.SetTag("apm.entry", true);
+            sweep?.SetTag("apm.outcome", "unknown");
             var cutoff = DateTime.UtcNow.AddSeconds(-TimeoutSeconds);
             var timedOut = SessionManager.Instance.GetTimedOut(cutoff);
             foreach (var session in timedOut)
@@ -47,8 +51,10 @@ public sealed class HeartbeatManager
             {
                 if (session.PlayerId == 0) continue;
 
-                var idle = await OrleansClient.Instance.Factory
-                    .GetGrain<IPlayerGrain>(session.PlayerId).GetLockIdleDurationAsync();
+                TimeSpan? idle;
+                using (LocalTelemetry.StartSpan("HeartbeatManager.GetLockIdleDuration", "grain"))
+                    idle = await OrleansClient.Instance.Factory
+                        .GetGrain<IPlayerGrain>(session.PlayerId).GetLockIdleDurationAsync();
                 if (idle is { } d && d.TotalSeconds >= LockIdleTimeoutSeconds)
                 {
                     Console.WriteLine($"[Heartbeat] Lock idle timeout: {session.SessionId}");
@@ -58,6 +64,7 @@ public sealed class HeartbeatManager
 
             await RedisClient.Instance.Db.StringSetAsync(
                 SessionCountKey, SessionManager.Instance.Count, SessionCountTtl);
+            sweep?.SetTag("apm.outcome", "success");
         }
     }
 }

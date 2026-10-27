@@ -9,7 +9,7 @@ public static class BoardHandler
 {
     public static async Task HandleListRequestAsync(ClientSession session, Memory<byte> packet)
     {
-        if (packet.Length < PacketHeader.HeaderSize + 4) return;
+        if (packet.Length < PacketHeader.HeaderSize + 4) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
         int characterId = BitConverter.ToInt32(packet.Span[PacketHeader.HeaderSize..]);
 
         var personal = await BoardRepository.Instance.GetPlayerCharacterBoardsAsync(session.PlayerId, characterId);
@@ -24,7 +24,7 @@ public static class BoardHandler
 
     public static async Task HandleUnlockRequestAsync(ClientSession session, Memory<byte> packet)
     {
-        if (packet.Length < PacketHeader.HeaderSize + 9) return;
+        if (packet.Length < PacketHeader.HeaderSize + 9) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
         var p = packet.Span[PacketHeader.HeaderSize..];
         int characterId = BitConverter.ToInt32(p);
         int boardNo = BitConverter.ToInt32(p[4..]);

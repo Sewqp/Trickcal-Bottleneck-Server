@@ -15,11 +15,11 @@ public static class LoginHandler
 
     public static async Task HandleAsync(ClientSession session, Memory<byte> packet)
     {
-        if (packet.Length < PacketHeader.HeaderSize + 2) return;
+        if (packet.Length < PacketHeader.HeaderSize + 2) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
         var payload = packet.Span[PacketHeader.HeaderSize..];
 
         ushort nameLen = BitConverter.ToUInt16(payload);
-        if (payload.Length < 2 + nameLen) return;
+        if (payload.Length < 2 + nameLen) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
         var name = Encoding.UTF8.GetString(payload.Slice(2, nameLen));
 
         var (playerId, isNewPlayer) = await PlayerRepository.Instance.GetOrCreateByNameAsync(name);
