@@ -3,8 +3,7 @@ using System.Text.Json;
 namespace GameServer.DB;
 
 // 전투력 환산 — 신규서버_설계계획서_초안.pdf 확정 공식: 0.1×HP + 2×메인공격력 + 물리방어력 + 마법방어력.
-// 공식이 스탯에 대해 선형이라, 델타 하나(캐릭터 획득 시 기본스탯/보드 해금/레벨업 증가분)만 넣어도
-// 전체 재계산과 같은 증가분이 나옴 — PlayerStatRepository.IncrementCombatPowerAsync(delta)와 그대로 맞물림.
+// 반올림 이후에는 선형성이 깨진다. 진행 변경은 캐릭터별 반올림된 전후 값의 차이를 더한다.
 public static class CombatPowerCalculator
 {
     public readonly record struct StatVector(long Hp, long MainAtk, long PhysDef, long MagicDef)
@@ -20,12 +19,23 @@ public static class CombatPowerCalculator
                 root.GetProperty("magic_def").GetInt64());
         }
 
+        public static StatVector operator +(StatVector left, StatVector right) =>
+            new(checked(left.Hp + right.Hp), checked(left.MainAtk + right.MainAtk),
+                checked(left.PhysDef + right.PhysDef), checked(left.MagicDef + right.MagicDef));
+
+        public static StatVector FromDelta(int type, long value) => type switch
+        {
+            0 => new(value, 0, 0, 0), 1 => new(0, value, 0, 0),
+            2 => new(0, 0, value, 0), 3 => new(0, 0, 0, value),
+            _ => throw new ArgumentOutOfRangeException(nameof(type))
+        };
+
         public static StatVector operator *(StatVector s, long levels) =>
-            new(s.Hp * levels, s.MainAtk * levels, s.PhysDef * levels, s.MagicDef * levels);
+            new(checked(s.Hp * levels), checked(s.MainAtk * levels), checked(s.PhysDef * levels), checked(s.MagicDef * levels));
     }
 
     public static long FromStats(StatVector s) =>
-        (long)Math.Round(0.1 * s.Hp + 2 * s.MainAtk + s.PhysDef + s.MagicDef, MidpointRounding.AwayFromZero);
+        checked((long)Math.Round(s.Hp / 10m + 2m * s.MainAtk + s.PhysDef + s.MagicDef, MidpointRounding.AwayFromZero));
 
     // character_board/global_board.stat_type(0=HP 1=메인공격력 2=물리방어 3=마법방어) 델타 하나를 환산
     public static long FromStatDelta(int statType, long statValue) => statType switch

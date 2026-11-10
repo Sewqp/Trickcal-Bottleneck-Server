@@ -84,7 +84,8 @@ public sealed class PlayerRepository
             cmd.CommandText = """
                 INSERT INTO character_status (player_id, character_id, status, level)
                 SELECT @pid, character_id, 0, 1
-                FROM character_info
+                FROM character_info;
+                INSERT INTO player_currency (player_id, gold, elleaf, macaron) VALUES (@pid, 0, 1000, 0);
                 """;
             cmd.Parameters.AddWithValue("@pid", playerId);
             await cmd.ExecuteNonQueryAsync();

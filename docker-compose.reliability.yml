@@ -1,0 +1,9 @@
+# Apply explicitly: docker compose -f docker-compose.yml -f docker-compose.reliability.yml up -d postgres redis
+# For a fresh test stack. Preserve/migrate existing Redis data before recreating an existing container.
+services:
+  redis:
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+volumes:
+  redis-data:

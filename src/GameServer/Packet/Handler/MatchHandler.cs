@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Apm.Agent;
 using GameServer.Grains;
 using GameServer.Network;
 
@@ -5,11 +7,23 @@ namespace GameServer.Packet.Handler;
 
 public static class MatchHandler
 {
-    public static Task HandleAsync(ClientSession session, Memory<byte> packet)
-        => OrleansClient.Instance.Factory.GetGrain<IMatchGrain>(0).RequestMatchAsync(session.PlayerId);
+    public static async Task HandleAsync(ClientSession session, Memory<byte> packet)
+    {
+        var status = await OrleansClient.Instance.Factory.GetGrain<IMatchGrain>(0)
+            .RequestMatchAsync(session.PlayerId, session.SessionId, Activity.Current?.Id);
+        var (outcome, code) = status switch
+        {
+            MatchRequestStatus.Queued => ("success", "match_queued"),
+            MatchRequestStatus.AlreadyQueued => ("success", "match_already_queued"),
+            MatchRequestStatus.Created => ("success", "match_created"),
+            MatchRequestStatus.StaleSession => ("rejected", "match_stale_session"),
+            MatchRequestStatus.NotificationUnavailable => ("rejected", "match_notification_unavailable"),
+            _ => throw new InvalidOperationException($"Unexpected match request status: {status}")
+        };
+        LocalTelemetry.SetOutcome(outcome, code);
+    }
 
-    // 클라가 대기를 포기(타임아웃)했을 때 큐에서 빼달라는 신호 — 안 부르면 나중에 접속한 다른
-    // 플레이어가 이미 포기한 이 플레이어와 "매칭 성사"로 잘못 묶여버림(죽은 세션과 매칭되는 버그).
+    // 취소된 요청을 뒤늦게 다른 플레이어와 매칭하지 않도록 세션 소유권을 확인한다.
     public static Task HandleCancelAsync(ClientSession session, Memory<byte> packet)
-        => OrleansClient.Instance.Factory.GetGrain<IMatchGrain>(0).CancelMatchAsync(session.PlayerId);
+        => OrleansClient.Instance.Factory.GetGrain<IMatchGrain>(0).CancelMatchAsync(session.PlayerId, session.SessionId);
 }

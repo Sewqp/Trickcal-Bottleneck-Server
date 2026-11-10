@@ -30,7 +30,8 @@ public sealed class TcpServer
         _listener.Start(_backlog);
         Console.WriteLine($"[TcpServer] Listening on port {((IPEndPoint)_listener.LocalEndpoint).Port} " +
             $"(backlog={_backlog}, acceptDelayMs={_acceptDelayMs})");
-        await AcceptLoopAsync();
+        try { await AcceptLoopAsync(); }
+        finally { _listener.Stop(); }
     }
 
     public Task StopAsync()

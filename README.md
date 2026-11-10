@@ -10,6 +10,17 @@
 [C# 버전 이전 프로젝트(Game-Server-CSharp)](https://github.com/Sewqp/Game-Server-CSharp)의 후속작으로,
 완전히 새 저장소로 시작했지만 기술 스택과 코딩 컨벤션은 이어받습니다.
 
+## APM으로 보완한 운영 관측·검증
+
+- **비동기 매칭 추적:** 매칭 접수·생성·결과 전송을 구분하고 원 요청과 연결했다. 20명 시범 재검증에서 결과 unknown 20건→0건, 결과 trace·원 요청 연결 각 20건을 확인했다.
+- **3만 동접 수집 검증:** APM ON 6회에서 기본 요청 2,659,080건의 건수와 trace ID를 대조해 누락·중복 0건을 확인했다. 로그인/Heartbeat 부하이며 정상 내부 상세는 1% 선택 정책이다.
+- **디스크 재전송 복구:** 실제 실행에서 3,072건을 보관한 뒤 모두 재전송했다. 저장된 묶음의 복구이며 무제한 장애 내성을 뜻하지 않는다.
+- **처리 단계별 조사:** 패킷·핸들러·Grain·DB/Redis·응답 쓰기를 연결해 조사하고, 서버 처리시간과 클라이언트 왕복시간을 분리했다.
+
+[APM의 실제 기여·구현 코드·검증 범위](docs/apm-operational-impact-20261110.md) · [실행별 공개 집계](docs/evidence/apm-operational-summary-20261110.json)
+
+서버 처리 능력의 일률적인 향상률은 입증하지 않았다. 원인 미확정 런타임 정체와 최대 TPS·전체 콘텐츠 혼합 부하는 후속 검증 대상이다.
+
 ---
 
 ## 기술 스택
@@ -20,7 +31,7 @@
 | 네트워크 | TCP 소켓 (async/await) |
 | 분산 처리 | Microsoft Orleans |
 | DB | PostgreSQL 18.x(로컬 네이티브) / 16.x(docker-compose), Redis |
-| 관측성 | OpenTelemetry SDK → Elastic APM Server (docker-compose 구성만, 미검증) |
+| 관측성 | 로컬 LLM APM(요청/trace/waterfall/자원 지표, 실측 기록 있음) + OpenTelemetry → Elastic(수신 미검증) |
 | 배포 | Docker, Docker Compose |
 
 ---
@@ -33,15 +44,28 @@
 |---|---|---|
 | 기준값 | PostgreSQL, **즉시 반영** | Redis, **델타 누적** |
 | 이유 | 위변조 방지가 중요한 일회성 이벤트 | 매 순간 바뀌는 값 — redis로 부하 절감 |
-| PostgreSQL 반영 시점 | 트랜잭션 즉시 | 세션 종료 4가지 트리거(하트비트 타임아웃 · 강제종료 · 정상종료 · 서버종료) 시 `SessionFlush`가 일괄 flush |
+| PostgreSQL 반영 시점 | 트랜잭션 즉시 | 세션 종료 + 30초 dirty 재시도. SessionFlush가 한 SQL 트랜잭션으로 저장 |
 
-가챠·극장(스토리)처럼 "처리 완료까지 재접속 판정을 멈춰야 하는" 기능은 `PlayerGrain`(Orleans)의
-락 상태 하나를 공유합니다 — 세션이 아니라 그레인에 두는 이유는, 분산 환경에서 단일 진실 소스가 될 수
-있는 건 세션이 아니라 그레인이기 때문입니다.
+보드·강화·가챠·극장의 검증과 변경은 같은 PlayerGrain 호출 안에서 직렬화합니다.
+Redis Lua가 재화와 진행 변경을 묶고, 가챠는 확정 추첨 기록으로 SQL/Redis 사이의 장애를 복구합니다.
+극장 스냅샷과 세션 소유권도 이 Grain에서 관리합니다.
 
 ---
 
-## 구현 현황 (2026-08-13 기준)
+## 정합성·복구 업데이트 (2026-11-09)
+
+- 중복 보드 해금·미보유 강화 차단, 두 재화의 원자적 차감, 반올림/전체 보드 전투력 보정
+- 가챠 요청 ID와 복구 기록, 트랜잭션 flush 및 dirty 자동 재시도, 세션 교체/재접속 정리
+- 로컬 계산·저장·Orleans·TCP 검증 40,298 assertions 통과 및 실제 GameServer kill/restart 복구 확인
+- 매칭 접수/생성 결과 및 각 플레이어의 결과 전송 trace를 원 요청과 연결. 최종 시범 unknown 0건
+- 로컬 검증 스크립트 제공. 고정 APM commit을 사용하는 CI는 로컬에 준비했으며, 워크플로 게시 권한 제한으로 원격 CI는 아직 게시·실행하지 않았다. 게임 종료 후 3만 동접 60초, APM ON/OFF × 게임 전후 12회 측정 완료: [APM 비용·게임 코드 전후 반복 측정](docs/apm-ab-comparison-20261110.md)
+
+코드별 변경, 패킷 호환성, 실행 명령, 검증 환경과 한계:
+[정합성·복구 업데이트](docs/reliability-upgrade-20261109.md).
+
+아래 2026-08 기록은 당시 결과이며, 이번 변경 이후 성능 측정 결과와 구분합니다.
+
+## 이전 구현·측정 기록 (2026-08-13 기준)
 
 **서버 사이드 전체 구현 + 동접 검증 + 백로그 정리까지 완료.**
 
@@ -70,7 +94,7 @@
 실행 → 정확히 15초 시점에 서버가 세션을 강제 종료하는 것 확인(로그 `Lock idle timeout` 발동 →
 EXIT 요청 전 클라 강제 종료). 검증 후 임계값 300초(5분)로 원복.
 
-**남은 백로그:**
+**당시 백로그(2026-08, 현재 상태는 위 업데이트 참조):**
 - 보드 해금 · 강화 경로의 combatPower 델타 가산 실기동 미검증(가챠 외 재화 지급 수단 없음)
 - 관측성 스택(OpenTelemetry → Elastic APM) — docker-compose 구성만 되어있고 실제 기동/OTLP 수신 미검증
 - `ScenarioClient`에 극장 터치 신호 전송 미구현 — 정상 시나리오에서 하드 타임아웃 경로가 자연스럽게
@@ -94,7 +118,7 @@ flowchart TD
 
     subgraph ORLEANS["  Microsoft Orleans Silo  "]
         direction TB
-        PG["**PlayerGrain**\n메시징 허브 · 세션 락 · 극장 스냅샷"]
+        PG["**PlayerGrain**\n진행 변경 직렬화 · 세션 소유권 · 극장 스냅샷"]
         MG["**MatchGrain**"]
         GG["**GuildGrain**\n온라인 멤버 접속알림"]
     end
@@ -106,10 +130,10 @@ flowchart TD
     HANDLERS -->|"GetGrain"| PG
     HANDLERS -->|"GetGrain"| MG
     HANDLERS -->|"GetGrain"| GG
-    HANDLERS -->|"즉시 반영 (획득)"| Postgres
-    HANDLERS -->|"델타 반영 (성장)"| RedisDB
+    PG -->|"멱등 획득 (가챠 복구 기록)"| Postgres
+    PG -->|"재화·성장 Lua"| RedisDB
     HB -->|"IsLockedAsync"| PG
-    RedisDB -->|"SessionFlush\n(4가지 트리거)"| Postgres
+    RedisDB -->|"SessionFlush\n(세션 종료 + dirty 재시도)"| Postgres
 
     style SRV fill:#0d1b2a,stroke:#4a90d9,color:#cce4ff
     style ORLEANS fill:#1a0d2a,stroke:#9c27b0,color:#e1bee7

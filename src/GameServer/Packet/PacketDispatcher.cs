@@ -29,6 +29,13 @@ public sealed class PacketDispatcher
         try
         {
             if (!ValidatePacket(session, packet, id)) return;
+            if (session.PlayerId != 0 && (id is PacketId.LoginRequest or PacketId.ReconnectRequest ||
+                !await OrleansClient.Instance.Factory.GetGrain<IPlayerGrain>(session.PlayerId).IsCurrentSessionAsync(session.SessionId)))
+            {
+                LocalTelemetry.SetOutcome("rejected", "stale_or_authenticated_session");
+                await session.DisconnectAsync();
+                return;
+            }
             if (await IsBlockedAsync(session, id)) return;
             using (LocalTelemetry.StartSpan($"handler.{name}", "handler"))
                 await _handlers[id](session, packet);

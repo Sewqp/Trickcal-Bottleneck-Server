@@ -29,42 +29,56 @@ public sealed class HeartbeatManager
                 break;
             }
 
-            using var sweep = LocalTelemetry.StartSpan("HeartbeatManager.Sweep", "background");
-            sweep?.SetTag("apm.entry", true);
-            sweep?.SetTag("apm.outcome", "unknown");
-            var cutoff = DateTime.UtcNow.AddSeconds(-TimeoutSeconds);
-            var timedOut = SessionManager.Instance.GetTimedOut(cutoff);
-            foreach (var session in timedOut)
+            try
             {
-                // 가챠/극장 처리 중(그레인 락)이면 재접속 판정 보류 — 처리 완료 신호가 올 때까지 대기
-                if (session.PlayerId != 0 &&
-                    await OrleansClient.Instance.Factory.GetGrain<IPlayerGrain>(session.PlayerId).IsLockedAsync())
-                    continue;
-
-                Console.WriteLine($"[Heartbeat] Timeout: {session.SessionId}");
-                await session.DisconnectAsync();
+                await SweepAsync();
             }
-
-            // 하드 타임아웃 안전장치: 하트비트는 정상적으로 오고 있어도(연결은 살아있음) 극장/가챠 락이
-            // 걸린 채 완료 신호(EXIT/터치 등)가 오랫동안 없으면 강제 종료 — 위 GetTimedOut과 별개 스윕.
-            foreach (var session in SessionManager.Instance.GetAll())
+            catch (OperationCanceledException) when (_ct.IsCancellationRequested) { break; }
+            catch (Exception error)
             {
-                if (session.PlayerId == 0) continue;
-
-                TimeSpan? idle;
-                using (LocalTelemetry.StartSpan("HeartbeatManager.GetLockIdleDuration", "grain"))
-                    idle = await OrleansClient.Instance.Factory
-                        .GetGrain<IPlayerGrain>(session.PlayerId).GetLockIdleDurationAsync();
-                if (idle is { } d && d.TotalSeconds >= LockIdleTimeoutSeconds)
-                {
-                    Console.WriteLine($"[Heartbeat] Lock idle timeout: {session.SessionId}");
-                    await session.DisconnectAsync();
-                }
+                Console.Error.WriteLine($"[Heartbeat] sweep failed; retrying: {error.Message}");
             }
-
-            await RedisClient.Instance.Db.StringSetAsync(
-                SessionCountKey, SessionManager.Instance.Count, SessionCountTtl);
-            sweep?.SetTag("apm.outcome", "success");
         }
     }
+
+    private static async Task SweepAsync()
+    {
+        using var sweep = LocalTelemetry.StartSpan("HeartbeatManager.Sweep", "background");
+        sweep?.SetTag("apm.entry", true);
+        sweep?.SetTag("apm.outcome", "unknown");
+        var cutoff = DateTime.UtcNow.AddSeconds(-TimeoutSeconds);
+        var timedOut = SessionManager.Instance.GetTimedOut(cutoff);
+        foreach (var session in timedOut)
+        {
+            // 가챠/극장 처리 중(그레인 락)이면 재접속 판정 보류 — 처리 완료 신호가 올 때까지 대기
+            if (session.PlayerId != 0 &&
+                await OrleansClient.Instance.Factory.GetGrain<IPlayerGrain>(session.PlayerId).IsLockedAsync())
+                continue;
+
+            Console.WriteLine($"[Heartbeat] Timeout: {session.SessionId}");
+            await session.DisconnectAsync();
+        }
+
+        // 하드 타임아웃 안전장치: 하트비트는 정상적으로 오고 있어도(연결은 살아있음) 극장/가챠 락이
+        // 걸린 채 완료 신호(EXIT/터치 등)가 오랫동안 없으면 강제 종료 — 위 GetTimedOut과 별개 스윕.
+        foreach (var session in SessionManager.Instance.GetAll())
+        {
+            if (session.PlayerId == 0) continue;
+
+            TimeSpan? idle;
+            using (LocalTelemetry.StartSpan("HeartbeatManager.GetLockIdleDuration", "grain"))
+                idle = await OrleansClient.Instance.Factory
+                .GetGrain<IPlayerGrain>(session.PlayerId).GetLockIdleDurationAsync();
+            if (idle is { } d && d.TotalSeconds >= LockIdleTimeoutSeconds)
+            {
+                Console.WriteLine($"[Heartbeat] Lock idle timeout: {session.SessionId}");
+                await session.DisconnectAsync();
+            }
+        }
+
+        await RedisClient.Instance.Db.StringSetAsync(
+            SessionCountKey, SessionManager.Instance.Count, SessionCountTtl);
+        sweep?.SetTag("apm.outcome", "success");
+    }
+
 }

@@ -22,41 +22,8 @@ public static class BoardHandler
         await session.SendAsync(PacketWriter.Build(PacketId.BoardListResult, BuildListPayload(personal, global)));
     }
 
-    public static async Task HandleUnlockRequestAsync(ClientSession session, Memory<byte> packet)
-    {
-        if (packet.Length < PacketHeader.HeaderSize + 9) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
-        var p = packet.Span[PacketHeader.HeaderSize..];
-        int characterId = BitConverter.ToInt32(p);
-        int boardNo = BitConverter.ToInt32(p[4..]);
-        bool isGlobal = p[8] == 1;
-
-        int cost = -1, statType = -1, statValue = 0;
-        if (isGlobal)
-        {
-            var master = await BoardRepository.Instance.GetGlobalBoardMasterAsync(characterId, boardNo);
-            if (master is not null) (cost, statType, statValue) = (master.Cost, master.StatType, master.StatValue);
-        }
-        else
-        {
-            var master = await BoardRepository.Instance.GetCharacterBoardMasterAsync(characterId, boardNo);
-            if (master is not null) (cost, statType, statValue) = (master.Cost, master.StatType, master.StatValue);
-        }
-
-        bool success = false;
-        if (cost >= 0 && await CurrencyRepository.Instance.TrySpendGoldAsync(session.PlayerId, cost))
-        {
-            if (isGlobal)
-                await BoardRepository.Instance.UnlockGlobalBoardAsync(session.PlayerId, characterId, boardNo);
-            else
-                await BoardRepository.Instance.UnlockCharacterBoardAsync(session.PlayerId, characterId, boardNo);
-
-            await PlayerStatRepository.Instance.IncrementCombatPowerAsync(
-                session.PlayerId, CombatPowerCalculator.FromStatDelta(statType, statValue));
-            success = true;
-        }
-
-        await session.SendAsync(PacketWriter.Build(PacketId.BoardUnlockResult, new byte[] { (byte)(success ? 1 : 0) }));
-    }
+    public static Task HandleUnlockRequestAsync(ClientSession session, Memory<byte> packet) =>
+        ProgressHandler.HandleAsync(session, packet);
 
     // payload: [2B personalCount] + N*{4B boardNo,1B status} + [2B globalCount] + N*{4B boardNo,1B status}
     private static byte[] BuildListPayload(List<PlayerCharacterBoardModel> personal, List<PlayerGlobalBoardModel> global)

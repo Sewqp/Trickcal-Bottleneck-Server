@@ -17,10 +17,10 @@ public sealed class SessionManager
 
     public void RegisterPlayerId(long playerId, Guid sessionId) => _playerIndex[playerId] = sessionId;
 
-    public void UnregisterPlayerId(long playerId)
+    public void UnregisterPlayerId(long playerId, Guid sessionId)
     {
         if (playerId != 0)
-            _playerIndex.TryRemove(playerId, out _);
+            ((ICollection<KeyValuePair<long, Guid>>)_playerIndex).Remove(new(playerId, sessionId));
     }
 
     public ClientSession? Get(Guid sessionId) => _sessions.GetValueOrDefault(sessionId);

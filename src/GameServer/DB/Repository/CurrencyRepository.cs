@@ -28,23 +28,33 @@ public sealed class CurrencyRepository
         if (entries.Length > 0) return ToModel(playerId, entries);
 
         var model = await FetchFromDbAsync(playerId);
-        await db.HashSetAsync(key, new HashEntry[]
-        {
-            new("gold", model.Gold),
-            new("elleaf", model.Elleaf),
-            new("macaron", model.Macaron),
-        });
-        return model;
+        await db.ScriptEvaluateAsync("""
+            if redis.call('EXISTS', KEYS[1]) == 0 then
+                redis.call('HMSET', KEYS[1], 'gold', ARGV[1], 'elleaf', ARGV[2], 'macaron', ARGV[3])
+            end
+            return 1
+            """, [key], [model.Gold, model.Elleaf, model.Macaron]);
+        return ToModel(playerId, await db.HashGetAllAsync(key));
     }
 
     public Task<long> IncrementGoldAsync(long playerId, long delta) =>
-        DB.RedisClient.Instance.Db.HashIncrementAsync(CacheKey(playerId), "gold", delta);
+        IncrementAsync(playerId, "gold", delta);
 
     public Task<long> IncrementElleafAsync(long playerId, long delta) =>
-        DB.RedisClient.Instance.Db.HashIncrementAsync(CacheKey(playerId), "elleaf", delta);
+        IncrementAsync(playerId, "elleaf", delta);
 
     public Task<long> IncrementMacaronAsync(long playerId, long delta) =>
-        DB.RedisClient.Instance.Db.HashIncrementAsync(CacheKey(playerId), "macaron", delta);
+        IncrementAsync(playerId, "macaron", delta);
+
+    private static async Task<long> IncrementAsync(long playerId, string field, long delta)
+    {
+        var result = await DB.RedisClient.Instance.Db.ScriptEvaluateAsync("""
+            local value = redis.call('HINCRBY', KEYS[1], ARGV[1], ARGV[2])
+            redis.call('SADD', KEYS[2], ARGV[3])
+            return value
+            """, [CacheKey(playerId), Progress.ProgressRepository.DirtyPlayers], [field, delta, playerId]);
+        return (long)result;
+    }
 
     // 가챠 등 "먼저 깎고 그 차감된 값을 기준으로 진행"해야 하는 소비 경로 전용 — 잔액 확인과 차감을
     // Lua 스크립트로 묶어 원자적으로 실행(HINCRBY만으로는 "0 미만 방지" 조건을 못 걺 — 중간에 다른

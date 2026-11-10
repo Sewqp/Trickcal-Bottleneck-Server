@@ -6,7 +6,7 @@ namespace GameServer.Grains;
 // 접속/접속해제 상태 알림 전용
 public interface IGuildGrain : IGrainWithIntegerKey
 {
-    Task MemberOnlineAsync(long playerId);
-    Task MemberOfflineAsync(long playerId);
+    Task MemberOnlineAsync(long playerId, Guid sessionId);
+    Task MemberOfflineAsync(long playerId, Guid sessionId);
     Task<List<long>> GetOnlineMembersAsync();
 }

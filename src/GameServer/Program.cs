@@ -28,7 +28,9 @@ Console.CancelKeyPress += (_, e) =>
 };
 
 AsyncLogger.Instance.Init(cts.Token);
-ApmReporter.Instance.Init(config.ApmCollectorEndpoint, config.OrleansServiceId, cts.Token);
+if (config.EnableApm)
+    ApmReporter.Instance.Init(config.ApmCollectorEndpoint, config.OrleansServiceId, cts.Token);
+Console.WriteLine($"[APM] enabled={config.EnableApm}, OTLP={config.EnableApm && config.EnableOtlpExport}");
 await using var apmReporter = ApmReporter.Instance;
 
 DbConnectionPool.Instance.Init(config.PostgresConnectionString);
@@ -60,7 +62,7 @@ hostBuilder.UseOrleans(silo =>
     silo.ConfigureEndpoints(siloPort: config.OrleansSiloPort, gatewayPort: config.OrleansGatewayPort);
     // 그레인 호출 사이에 Activity(트레이스 컨텍스트)를 전파 — 이게 없으면 OTel이 "Microsoft.Orleans.*"
     // 소스를 구독해도 각 그레인 호출이 서로 이어지지 않는 끊어진 span으로만 남음.
-    silo.AddActivityPropagation();
+    if (config.EnableApm) silo.AddActivityPropagation();
     // 실로를 여러 개(멀티 실로 클러스터) 띄워서 실험할 때 각 실로/그레인 분포를 한 화면에서 보기 위함 —
     // 대시보드 서비스 자체는 모든 실로에 있어야 메트릭을 수집함(Microsoft 공식 문서 기준).
     silo.AddDashboard();
@@ -70,14 +72,19 @@ hostBuilder.UseOrleans(silo =>
 // PostgreSQL(Npgsql 내장 ActivitySource)/Redis(StackExchangeRedis 계측)/Orleans 그레인 호출
 // 세 갈래를 한 파이프라인으로 묶음. 아직 미검증 상태였던 관측성 스택([[project-new-server-design]])을
 // 처음으로 실제 코드와 연결하는 부분.
-hostBuilder.Services.AddOpenTelemetry()
-    .ConfigureResource(r => r.AddService(config.OrleansServiceId))
-    .WithTracing(tracing => tracing
-        .AddSource("Microsoft.Orleans.Runtime", "Microsoft.Orleans.Application", Apm.Agent.LocalTelemetry.SourceName)
-        .AddNpgsql()
-        .AddRedisInstrumentation(RedisClient.Instance.Multiplexer,
-            options => options.FlushInterval = TimeSpan.FromMilliseconds(100))
-        .AddOtlpExporter(o => o.Endpoint = new Uri(config.OtlpEndpoint)));
+if (config.EnableApm)
+{
+    hostBuilder.Services.AddOpenTelemetry()
+        .ConfigureResource(r => r.AddService(config.OrleansServiceId))
+        .WithTracing(tracing =>
+        {
+            tracing.AddSource("Microsoft.Orleans.Runtime", "Microsoft.Orleans.Application", Apm.Agent.LocalTelemetry.SourceName)
+                .AddNpgsql()
+                .AddRedisInstrumentation(RedisClient.Instance.Multiplexer,
+                    options => options.FlushInterval = TimeSpan.FromMilliseconds(100));
+            if (config.EnableOtlpExport) tracing.AddOtlpExporter(o => o.Endpoint = new Uri(config.OtlpEndpoint));
+        });
+}
 
 using var host = hostBuilder.Build();
 host.MapOrleansDashboard();
@@ -86,7 +93,9 @@ Console.WriteLine($"[Dashboard] http://localhost:{config.DashboardPort}");
 OrleansClient.Instance.Init(host.Services.GetRequiredService<IGrainFactory>());
 Console.WriteLine($"[Orleans] Silo active. Cluster={config.OrleansClusterId}");
 
-_ = new HeartbeatManager(cts.Token).RunAsync();
+using var shutdownRegistration = host.Lifetime.ApplicationStopping.Register(cts.Cancel);
+var heartbeatTask = new HeartbeatManager(cts.Token).RunAsync();
+var flushTask = new ProgressFlushWorker(cts.Token).RunAsync();
 
 var dispatcher = PacketDispatcher.Instance;
 dispatcher.Register(PacketId.LoginRequest,       LoginHandler.HandleAsync);
@@ -119,11 +128,17 @@ dispatcher.Register(PacketId.GuildInfoRequest,   GuildHandler.HandleInfoRequestA
 dispatcher.Register(PacketId.DebugGrantCurrencyRequest, DebugHandler.HandleGrantCurrencyAsync);
 
 var server = new TcpServer(config.TcpPort, cts.Token, config.TcpBacklog, config.TcpAcceptDelayMs);
-await server.StartAsync();
-
-// 서버 강제 종료(design-plan-draft.md 5절 트리거 ④) — 접속 중이던 세션 전부를 순회하며
-// SessionFlush.FlushOneAsync를 반복 호출(ClientSession.DisconnectAsync 안에서 호출됨)
-foreach (var session in SessionManager.Instance.GetAll())
-    await session.DisconnectAsync();
-
-await host.StopAsync();
+try
+{
+    await server.StartAsync();
+}
+finally
+{
+    cts.Cancel();
+    await Task.WhenAll(heartbeatTask, flushTask);
+    // 소켓 정리와 저장을 제한된 병렬도로 수행한다. 실패한 저장은 dirty 집합에 남긴다.
+    await Parallel.ForEachAsync(SessionManager.Instance.GetAll(),
+        new ParallelOptions { MaxDegreeOfParallelism = 8 },
+        async (session, _) => await session.DisconnectAsync());
+    await host.StopAsync();
+}

@@ -13,13 +13,22 @@ public sealed class ServerConfig
     public string OrleansServiceId { get; init; } = "";
     public int OrleansSiloPort { get; init; }
     public int OrleansGatewayPort { get; init; }
+    public bool EnableApm { get; init; }
+    public bool EnableOtlpExport { get; init; }
     public string OtlpEndpoint { get; init; } = "";
     public string ApmCollectorEndpoint { get; init; } = "";
     public string WatchPlayerName { get; init; } = "";
     public int DashboardPort { get; init; }
 
+    public int MaxCharacterLevel { get; init; }
+    public bool EnableDebugCommands { get; init; }
+    public bool EnableFaultInjection { get; init; }
+
     private static ServerConfig Load() => new()
     {
+        MaxCharacterLevel = int.TryParse(Env("TRICKCAL_MAX_CHARACTER_LEVEL"), out var maxLevel) && maxLevel is > 0 and <= 1000000 ? maxLevel : 1000,
+        EnableDebugCommands = Env("TRICKCAL_ENABLE_DEBUG_COMMANDS") == "1",
+        EnableFaultInjection = Env("TRICKCAL_ENABLE_FAULT_INJECTION") == "1",
         TcpPort = int.TryParse(Env("TCP_PORT"), out var p) ? p : 9100,
         // 데모용 병목 재현 — accept backlog를 낮춰서 대량 동접 순간에 접속 실패 스파이크를 일부러
         // 만들어보기 위함(기본값 512는 Windows/Linux 흔한 관행값, 원래 코드에 하드코딩돼 있던 값 그대로).
@@ -45,6 +54,8 @@ public sealed class ServerConfig
         OrleansGatewayPort = int.TryParse(Env("ORLEANS_GATEWAY_PORT"), out var gp) ? gp : 30000,
         // docker-compose.yml의 apm-server가 호스트 8200 포트로 OTLP gRPC/HTTP를 같이 서비스함
         // (Elastic 공식 문서 확인: 별도 플래그 없이 기본 설정으로 동작).
+        EnableApm = Env("APM_ENABLED") != "0",
+        EnableOtlpExport = Env("OTEL_EXPORTER_OTLP_ENABLED") != "0",
         OtlpEndpoint = Env("OTEL_EXPORTER_OTLP_ENDPOINT") ?? "http://127.0.0.1:8200",
         // LLM 기반 로컬 APM 프로젝트(별도 저장소)의 CollectionServer — 패킷 처리 메트릭을 여기로 전송해
         // 임계값 이상탐지 + 로컬 LLM(LM Studio) 원인분석 파이프라인에 태운다.

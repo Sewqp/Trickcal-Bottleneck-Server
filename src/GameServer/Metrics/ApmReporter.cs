@@ -24,12 +24,21 @@ public sealed class ApmReporter : IAsyncDisposable
             UserHashKey = key is null ? null : Encoding.UTF8.GetBytes(key),
             DetailSampleRate = ReadNumber("APM_DETAIL_SAMPLE_RATE", 0.01),
             SlowTraceMs = ReadNumber("APM_SLOW_TRACE_MS", 100),
+            SpoolDirectory = Environment.GetEnvironmentVariable("APM_SPOOL_DIRECTORY")
+                ?? Path.Combine(AppContext.BaseDirectory, ".apm-spool"),
             ActiveSessions = () => SessionManager.Instance.Count
         });
     }
 
     public Activity? StartRequest(string name, ClientSession session) =>
         _telemetry?.StartRequest(name, session.SessionId, session.PlayerId);
+
+    public Activity? StartMatchResult(ClientSession session, string? requestTraceParent)
+    {
+        ActivityContext.TryParse(requestTraceParent, null, out var cause);
+        return _telemetry?.StartJob("MatchResult", _telemetry.UserKey(session.PlayerId),
+            session.SessionId.ToString("N"), cause, "Network/PlayerSessionObserver.cs");
+    }
 
     private static double ReadNumber(string key, double fallback)
     {
@@ -46,7 +55,7 @@ public sealed class ApmReporter : IAsyncDisposable
         if (data.Length < PacketHeader.HeaderSize) return;
         var id = (PacketId)BitConverter.ToUInt16(data.AsSpan(sizeof(ushort)));
         if (id is PacketId.Heartbeat or PacketId.InventoryResult or PacketId.CharacterListResult or
-            PacketId.CharacterEnhanceEnterResult or PacketId.BoardListResult or PacketId.MatchResult)
+            PacketId.CharacterEnhanceEnterResult or PacketId.BoardListResult)
         {
             LocalTelemetry.SetOutcome("success", id.ToString());
             return;
@@ -55,7 +64,7 @@ public sealed class ApmReporter : IAsyncDisposable
         var flag = data[PacketHeader.HeaderSize];
         bool? success = id switch
         {
-            PacketId.LoginResult or PacketId.ReconnectResult or PacketId.ItemAcquireResult or PacketId.ItemUseResult or
+            PacketId.LoginResult or PacketId.ReconnectResult or PacketId.MatchResult or PacketId.ItemAcquireResult or PacketId.ItemUseResult or
             PacketId.GachaResult or PacketId.TheaterEnterResult or PacketId.CharacterEnhanceExitResult or
             PacketId.BoardUnlockResult or PacketId.GuildCreateResult or PacketId.GuildJoinResult or
             PacketId.GuildLeaveResult or PacketId.GuildInfoResult or PacketId.DebugGrantCurrencyResult => flag == 1,

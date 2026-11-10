@@ -204,8 +204,9 @@ public sealed class BoardRepository
         if (loaded.Count == 0) return Array.Empty<HashEntry>(); // 아직 캐릭터 미보유 — 다음에 다시 시도
 
         var hashEntries = loaded.ToArray();
-        await db.HashSetAsync(key, hashEntries);
-        return hashEntries;
+        foreach (var entry in hashEntries)
+            await db.HashSetAsync(key, entry.Name, entry.Value, When.NotExists);
+        return await db.HashGetAllAsync(key);
     }
 
     private async Task<HashEntry[]> GetOrLoadGlobalBoardsAsync(long playerId)
@@ -231,7 +232,8 @@ public sealed class BoardRepository
         if (loaded.Count == 0) return Array.Empty<HashEntry>();
 
         var hashEntries = loaded.ToArray();
-        await db.HashSetAsync(key, hashEntries);
-        return hashEntries;
+        foreach (var entry in hashEntries)
+            await db.HashSetAsync(key, entry.Name, entry.Value, When.NotExists);
+        return await db.HashGetAllAsync(key);
     }
 }

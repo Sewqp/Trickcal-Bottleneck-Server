@@ -28,8 +28,8 @@ public sealed class PlayerStatRepository
         if (cached.HasValue) return (long)cached;
 
         long value = await FetchFromDbAsync(playerId);
-        await db.StringSetAsync(CacheKey(playerId), value);
-        return value;
+        await db.StringSetAsync(CacheKey(playerId), value, when: StackExchange.Redis.When.NotExists);
+        return (long)await db.StringGetAsync(CacheKey(playerId));
     }
 
     public Task IncrementCombatPowerAsync(long playerId, long delta) =>

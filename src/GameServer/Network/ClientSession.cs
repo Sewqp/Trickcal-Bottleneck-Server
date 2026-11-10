@@ -16,6 +16,9 @@ public sealed class ClientSession
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly CancellationToken _ct;
     private IPlayerSessionObserver? _observerRef;
+    private readonly object _disconnectGate = new();
+    private Task? _disconnectTask;
+    private readonly CancellationTokenSource _lifetime;
 
     public Guid SessionId { get; } = Guid.NewGuid();
     public long PlayerId { get; set; }
@@ -30,15 +33,30 @@ public sealed class ClientSession
     {
         _client = client;
         _stream = client.GetStream();
-        _ct = ct;
+        _lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _ct = _lifetime.Token;
     }
 
     public async Task AttachPlayerAsync(long playerId)
     {
-        PlayerId = playerId;
-        SessionManager.Instance.RegisterPlayerId(playerId, SessionId);
-        _observerRef ??= OrleansClient.Instance.Factory.CreateObjectReference<IPlayerSessionObserver>(new PlayerSessionObserver(this));
-        await OrleansClient.Instance.Factory.GetGrain<IPlayerGrain>(playerId).SubscribeAsync(_observerRef);
+        lock (_disconnectGate)
+        {
+            if (_disconnectTask is not null || PlayerId != 0) throw new IOException("Session is closed or already authenticated.");
+            PlayerId = playerId;
+        }
+        _observerRef = OrleansClient.Instance.Factory.CreateObjectReference<IPlayerSessionObserver>(new PlayerSessionObserver(this));
+        var grain = OrleansClient.Instance.Factory.GetGrain<IPlayerGrain>(playerId);
+        await grain.SubscribeAsync(SessionId, _observerRef);
+        lock (_disconnectGate)
+        {
+            if (_disconnectTask is null)
+            {
+                SessionManager.Instance.RegisterPlayerId(playerId, SessionId);
+                return;
+            }
+        }
+        await grain.OnDisconnectAsync(SessionId);
+        throw new IOException("Session closed during login.");
     }
 
     public async Task StartAsync()
@@ -69,35 +87,46 @@ public sealed class ClientSession
         }
     }
 
-    public async Task DisconnectAsync()
+    public Task DisconnectAsync()
     {
-        if (PlayerId != 0)
+        lock (_disconnectGate) return _disconnectTask ??= DisconnectCoreAsync();
+    }
+
+    private async Task DisconnectCoreAsync()
+    {
+        // 소켓/플레이어 인덱스는 즉시 정리한다. 세션 목록에는 cleanup 완료까지 남겨 shutdown이 기다리게 한다.
+        try
         {
-            // redis→PG flush 트리거 ①~③(하트비트 타임아웃/강제종료/정상종료)은 전부 이 경로를 거침 —
-            // "세션 1개 flush" 함수 하나로 통일(design-plan-draft.md 5-1절)
-            await SessionFlush.FlushOneAsync(PlayerId);
-
-            var guildId = await GuildRepository.Instance.GetGuildIdByPlayerAsync(PlayerId);
-            if (guildId.HasValue)
-                await OrleansClient.Instance.Factory.GetGrain<IGuildGrain>(guildId.Value).MemberOfflineAsync(PlayerId);
-
-            // 매칭 대기열에 남아있으면(매칭 상대를 못 만난 채 끊긴 경우) 큐에서 제거 — 안 그러면 나중에
-            // 접속한 다른 플레이어가 이미 끊긴 이 플레이어와 "매칭 성사"로 묶여버림(죽은 세션과 매칭되는
-            // 버그). CancelMatchAsync는 없으면 그냥 무시하는 멱등 연산이라 매칭 대기 중이 아니었어도 안전.
-            await OrleansClient.Instance.Factory.GetGrain<IMatchGrain>(0).CancelMatchAsync(PlayerId);
-
-            var grain = OrleansClient.Instance.Factory.GetGrain<IPlayerGrain>(PlayerId);
-            await grain.OnDisconnectAsync();
-            // 정상 종료/비정상 종료(크래시 등 TCP 레벨 끊김) 둘 다 이 경로 하나로 처리됨 —
-            // 가챠/극장 처리 중 끊기면 그레인 락이 영영 안 풀리는 걸 막기 위해 여기서 항상 해제.
-            // UnlockAsync는 멱등이라 애초에 안 걸려있었어도 안전.
-            await grain.UnlockAsync();
+            _lifetime.Cancel();
+            _stream.Close();
+            _client.Close();
+            SessionManager.Instance.UnregisterPlayerId(PlayerId, SessionId);
+            if (PlayerId == 0) return;
+            var factory = OrleansClient.Instance.Factory;
+            await CleanupAsync(() => factory.GetGrain<IPlayerGrain>(PlayerId).OnDisconnectAsync(SessionId));
+            await CleanupAsync(async () =>
+            {
+                var guildId = await GuildRepository.Instance.GetGuildIdByPlayerAsync(PlayerId);
+                if (guildId.HasValue)
+                    await factory.GetGrain<IGuildGrain>(guildId.Value).MemberOfflineAsync(PlayerId, SessionId);
+            });
+            await CleanupAsync(() => factory.GetGrain<IMatchGrain>(0).CancelMatchAsync(PlayerId, SessionId));
+            if (_observerRef is not null) factory.DeleteObjectReference<IPlayerSessionObserver>(_observerRef);
         }
+        finally
+        {
+            SessionManager.Instance.Remove(SessionId);
+        }
+    }
 
-        SessionManager.Instance.UnregisterPlayerId(PlayerId);
-        SessionManager.Instance.Remove(SessionId);
-        _stream.Close();
-        _client.Close();
+    private async Task CleanupAsync(Func<Task> cleanup)
+    {
+        try { await cleanup(); }
+        catch (Exception error)
+        {
+            // 진행 변경은 Redis dirty 집합에 남아 ProgressFlushWorker가 다시 저장한다.
+            Console.Error.WriteLine($"[Disconnect] cleanup failed for {PlayerId}/{SessionId}: {error.Message}");
+        }
     }
 
     private async Task RecvLoopAsync()

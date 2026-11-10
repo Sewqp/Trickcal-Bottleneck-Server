@@ -117,8 +117,9 @@ public sealed class CharacterRepository
         if (loaded.Count == 0) return Array.Empty<HashEntry>(); // 아직 보유 캐릭터 없음 — 다음에 다시 시도
 
         var hashEntries = loaded.ToArray();
-        await db.HashSetAsync(key, hashEntries);
-        return hashEntries;
+        foreach (var entry in hashEntries)
+            await db.HashSetAsync(key, entry.Name, entry.Value, When.NotExists);
+        return await db.HashGetAllAsync(key);
     }
 
     // 캐릭터 단건 획득 — 내부적으로 배치 버전을 1개짜리 리스트로 호출(트랜잭션 로직 중복 방지)

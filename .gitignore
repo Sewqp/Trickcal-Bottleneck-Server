@@ -14,3 +14,10 @@ Thumbs.db
 
 # Graphify(apm/ 저장소의 CollectionServer가 코드 분석에 참조하는 로컬 지식그래프) 빌드 산출물
 src/GameServer/graphify-out/
+
+# Local verification output
+.verification/
+__pycache__/
+
+# Private benchmark evidence pointers and local data
+/.local-evidence/

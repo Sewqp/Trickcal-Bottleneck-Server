@@ -24,7 +24,7 @@ public static class GuildHandler
         await session.SendAsync(PacketWriter.Build(PacketId.GuildCreateResult, result));
 
         if (guildId.HasValue)
-            await OrleansClient.Instance.Factory.GetGrain<IGuildGrain>(guildId.Value).MemberOnlineAsync(session.PlayerId);
+            await OrleansClient.Instance.Factory.GetGrain<IGuildGrain>(guildId.Value).MemberOnlineAsync(session.PlayerId, session.SessionId);
     }
 
     public static async Task HandleJoinAsync(ClientSession session, Memory<byte> packet)
@@ -36,7 +36,7 @@ public static class GuildHandler
         await session.SendAsync(PacketWriter.Build(PacketId.GuildJoinResult, new byte[] { (byte)(success ? 1 : 0) }));
 
         if (success)
-            await OrleansClient.Instance.Factory.GetGrain<IGuildGrain>(guildId).MemberOnlineAsync(session.PlayerId);
+            await OrleansClient.Instance.Factory.GetGrain<IGuildGrain>(guildId).MemberOnlineAsync(session.PlayerId, session.SessionId);
     }
 
     public static async Task HandleLeaveAsync(ClientSession session, Memory<byte> packet)
@@ -48,7 +48,7 @@ public static class GuildHandler
         await session.SendAsync(PacketWriter.Build(PacketId.GuildLeaveResult, new byte[] { (byte)(success ? 1 : 0) }));
 
         if (success)
-            await OrleansClient.Instance.Factory.GetGrain<IGuildGrain>(guildId).MemberOfflineAsync(session.PlayerId);
+            await OrleansClient.Instance.Factory.GetGrain<IGuildGrain>(guildId).MemberOfflineAsync(session.PlayerId, session.SessionId);
     }
 
     public static async Task HandleInfoRequestAsync(ClientSession session, Memory<byte> packet)

@@ -33,87 +33,8 @@ public static class CharacterHandler
         await session.SendAsync(PacketWriter.Build(PacketId.CharacterEnhanceEnterResult, result));
     }
 
-    // UI 이탈 — 클라가 보낸 "M→N"은 트리거일 뿐, 실제 차감은 항상 서버가 고정 공식으로 재계산한 값 기준.
-    // 마카롱+골드 두 재화를 같이 씀 — 마카롱을 먼저 차감해보고, 골드가 부족하면 마카롱만 환불(두 재화를
-    // 하나의 Lua 스크립트로 묶는 원자적 방식까지는 이 규모에서 과함, 실패 시 보상 환불로 충분).
-    public static async Task HandleEnhanceExitAsync(ClientSession session, Memory<byte> packet)
-    {
-        if (packet.Length < PacketHeader.HeaderSize + 8) { Apm.Agent.LocalTelemetry.SetOutcome("rejected", "malformed_payload"); return; }
-        var p = packet.Span[PacketHeader.HeaderSize..];
-        int characterId = BitConverter.ToInt32(p);
-        int reportedLevel = BitConverter.ToInt32(p[4..]);
-
-        int currentLevel = await CharacterRepository.Instance.GetLevelAsync(session.PlayerId, characterId);
-        bool success = false;
-        long macaronSpentAmount = 0;
-        long goldSpentAmount = 0;
-
-        if (reportedLevel > currentLevel)
-        {
-            long macaronCost = CalculateEnhanceMacaronCost(currentLevel, reportedLevel);
-            long goldCost = CalculateEnhanceGoldCost(currentLevel, reportedLevel);
-
-            bool macaronSpent = await CurrencyRepository.Instance.TrySpendMacaronAsync(session.PlayerId, macaronCost);
-            if (macaronSpent)
-            {
-                bool goldSpent = await CurrencyRepository.Instance.TrySpendGoldAsync(session.PlayerId, goldCost);
-                if (goldSpent)
-                {
-                    success = true;
-                    macaronSpentAmount = macaronCost;
-                    goldSpentAmount = goldCost;
-                    await CharacterRepository.Instance.SetLevelAsync(session.PlayerId, characterId, reportedLevel);
-
-                    // stat_growth_table은 "레벨업 1회당 증가량" 고정값 — 오른 레벨 수만큼 곱해 스탯 델타를
-                    // 구하고, 공식이 선형이라 그 델타 하나만 전투력으로 환산해도 전체 재계산과 동일함
-                    var info = await CharacterRepository.Instance.GetCharacterInfoAsync(characterId);
-                    if (info is not null)
-                    {
-                        var growth = CombatPowerCalculator.StatVector.Parse(info.StatGrowthTableJson);
-                        var delta = growth * (reportedLevel - currentLevel);
-                        await PlayerStatRepository.Instance.IncrementCombatPowerAsync(
-                            session.PlayerId, CombatPowerCalculator.FromStats(delta));
-                    }
-                }
-                else
-                {
-                    // 골드가 부족해 전체 강화가 취소됨 — 이미 차감된 마카롱을 환불했으므로 실제 소모량은 0
-                    await CurrencyRepository.Instance.IncrementMacaronAsync(session.PlayerId, macaronCost);
-                }
-            }
-        }
-
-        int finalLevel = success ? reportedLevel : currentLevel;
-        var currency = await CurrencyRepository.Instance.GetAsync(session.PlayerId);
-
-        // payload: [1B success][4B level][8B macaron][8B gold][8B macaronSpent][8B goldSpent]
-        var result = new byte[37];
-        result[0] = (byte)(success ? 1 : 0);
-        BitConverter.TryWriteBytes(result.AsSpan(1), finalLevel);
-        BitConverter.TryWriteBytes(result.AsSpan(5), currency.Macaron);
-        BitConverter.TryWriteBytes(result.AsSpan(13), currency.Gold);
-        BitConverter.TryWriteBytes(result.AsSpan(21), macaronSpentAmount);
-        BitConverter.TryWriteBytes(result.AsSpan(29), goldSpentAmount);
-        await session.SendAsync(PacketWriter.Build(PacketId.CharacterEnhanceExitResult, result));
-    }
-
-    // 실 밸런스 데이터가 없어 임시 선형 공식(레벨 하나 올릴 때마다 N * 목표레벨) — 나중에
-    // character_info.stat_growth_table 기반 실제 테이블로 교체 가능하게 이 함수 하나로 고립시켜둠
-    private static long CalculateEnhanceMacaronCost(int fromLevel, int toLevel)
-    {
-        long cost = 0;
-        for (int level = fromLevel + 1; level <= toLevel; level++)
-            cost += 10L * level;
-        return cost;
-    }
-
-    private static long CalculateEnhanceGoldCost(int fromLevel, int toLevel)
-    {
-        long cost = 0;
-        for (int level = fromLevel + 1; level <= toLevel; level++)
-            cost += 20L * level;
-        return cost;
-    }
+    public static Task HandleEnhanceExitAsync(ClientSession session, Memory<byte> packet) =>
+        ProgressHandler.HandleAsync(session, packet);
 
     // payload: [2B count] + N * { [4B characterId][1B status][4B level] }
     private static byte[] BuildListPayload(List<CharacterStatusModel> list)
