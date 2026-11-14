@@ -32,7 +32,7 @@
 | 분산 처리 | Microsoft Orleans |
 | DB | PostgreSQL 18.x(로컬 네이티브) / 16.x(docker-compose), Redis |
 | 관측성 | 로컬 LLM APM(요청/trace/waterfall/자원 지표, 실측 기록 있음) + OpenTelemetry → Elastic(수신 미검증) |
-| 배포 | Docker, Docker Compose |
+| 배포 | Docker, Docker Compose / Linux systemd 릴리스 교체·롤백 실검증 |
 
 ---
 
@@ -59,6 +59,7 @@ Redis Lua가 재화와 진행 변경을 묶고, 가챠는 확정 추첨 기록�
 - 로컬 계산·저장·Orleans·TCP 검증 40,298 assertions 통과 및 실제 GameServer kill/restart 복구 확인
 - 매칭 접수/생성 결과 및 각 플레이어의 결과 전송 trace를 원 요청과 연결. 최종 시범 unknown 0건
 - GitHub Actions의 Ubuntu 환경에서 Release 빌드, 40,298 assertions, 실제 GameServer kill/restart 복구를 실행·통과했다. APM 커밋과 PostgreSQL/Redis 검증 환경을 고정하고 로그 5개를 내려받아 확인했다. [CI 실행·재현 조건·한계](docs/ci-validation-20261115.md), [실제 실행](https://github.com/Sewqp/Trickcal-Bottleneck-Server/actions/runs/43609555599).
+- Ubuntu 24.04의 실제 systemd 서비스에서 새 릴리스 배포, 수동 롤백, 기동 실패 시 자동 복원을 검증했다. 재접속 후 가챠 응답·캐릭터·재화·전투력과 PostgreSQL 저장값을 대조했고, 훼손된 배포물은 실행 전에 거부했다. 단일 인스턴스 재시작 방식으로 무중단 배포는 아니다. [실측 기록·트레이드오프](docs/linux-deployment-validation-20261115.md) · [배포·롤백 재현 절차](docs/linux-deployment.md).
 - 게임 종료 후 3만 동접 60초, APM ON/OFF × 게임 전후 12회 측정 완료: [APM 비용·게임 코드 전후 반복 측정](docs/apm-ab-comparison-20261110.md). 위 CI의 정합성 검사와 별도 부하 측정이다.
 
 코드별 변경, 패킷 호환성, 실행 명령, 검증 환경과 한계:

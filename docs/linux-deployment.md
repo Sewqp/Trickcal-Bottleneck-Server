@@ -2,6 +2,8 @@
 
 이 구성은 격리된 Linux 호스트에서 실제 GameServer를 systemd 서비스로 교체하고 되돌리는 재현 도구다. 외부 운영 서버에 배포하거나 DB를 초기화하는 도구가 아니다. 실행 결과는 별도 날짜별 기록에 남긴다.
 
+[2026-11-15 실제 배포·롤백 검증 결과](linux-deployment-validation-20261115.md) · [실행 집계와 증거 파일 해시](evidence/linux-deployment-20261115.json)
+
 ## 배포 구조
 
 ```text

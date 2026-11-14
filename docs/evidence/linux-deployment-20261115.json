@@ -1,0 +1,222 @@
+{
+  "record_date_kst": "2026-11-15",
+  "run_url": "https://github.com/Sewqp/Trickcal-Bottleneck-Server/actions/runs/43637188455",
+  "correctness_ci_url": "https://github.com/Sewqp/Trickcal-Bottleneck-Server/actions/runs/43637188372",
+  "job_started_utc": "2026-11-14T20:22:55Z",
+  "job_completed_utc": "2026-11-14T20:24:06Z",
+  "artifact_name": "linux-deployment-evidence",
+  "artifact_retention_days": 14,
+  "observation": {
+    "status": "passed",
+    "unit": "trickcal-deploy-94faa18ee0.service",
+    "baseline_commit": "b802c59673ba267ed16b8d27b00bb7ad979c5c2d",
+    "candidate_commit": "5374916dce8e4f1bcda1b3277f4e5a878ac17f21",
+    "events": [
+      {
+        "staged": "baseline-b802c59673ba267ed16b8d27b00bb7ad979c5c2d",
+        "files": 396
+      },
+      {
+        "staged": "candidate-5374916dce8e4f1bcda1b3277f4e5a878ac17f21",
+        "files": 396
+      },
+      {
+        "action": "activate",
+        "from": null,
+        "target": "baseline-b802c59673ba267ed16b8d27b00bb7ad979c5c2d",
+        "source_commit": "b802c59673ba267ed16b8d27b00bb7ad979c5c2d",
+        "timestamp_utc": "2026-11-14T20:23:47Z",
+        "ready": {
+          "release": "baseline-b802c59673ba267ed16b8d27b00bb7ad979c5c2d",
+          "pid": 3831,
+          "executable": "/home/runner/work/Trickcal-Bottleneck-Server/Trickcal-Bottleneck-Server/server/.verification/linux-deployment/host/releases/baseline-b802c59673ba267ed16b8d27b00bb7ad979c5c2d/GameServer",
+          "player_id": 1,
+          "heartbeats": 3,
+          "probe_ms": 237.148
+        },
+        "outcome": "healthy",
+        "elapsed_seconds": 1.934
+      },
+      {
+        "action": "activate",
+        "from": "baseline-b802c59673ba267ed16b8d27b00bb7ad979c5c2d",
+        "target": "candidate-5374916dce8e4f1bcda1b3277f4e5a878ac17f21",
+        "source_commit": "5374916dce8e4f1bcda1b3277f4e5a878ac17f21",
+        "timestamp_utc": "2026-11-14T20:23:50Z",
+        "ready": {
+          "release": "candidate-5374916dce8e4f1bcda1b3277f4e5a878ac17f21",
+          "pid": 3912,
+          "executable": "/home/runner/work/Trickcal-Bottleneck-Server/Trickcal-Bottleneck-Server/server/.verification/linux-deployment/host/releases/candidate-5374916dce8e4f1bcda1b3277f4e5a878ac17f21/GameServer",
+          "player_id": 1,
+          "heartbeats": 3,
+          "probe_ms": 197.259
+        },
+        "outcome": "healthy",
+        "elapsed_seconds": 1.838
+      },
+      {
+        "action": "rollback",
+        "from": "candidate-5374916dce8e4f1bcda1b3277f4e5a878ac17f21",
+        "target": "baseline-b802c59673ba267ed16b8d27b00bb7ad979c5c2d",
+        "source_commit": "b802c59673ba267ed16b8d27b00bb7ad979c5c2d",
+        "timestamp_utc": "2026-11-14T20:23:52Z",
+        "ready": {
+          "release": "baseline-b802c59673ba267ed16b8d27b00bb7ad979c5c2d",
+          "pid": 4000,
+          "executable": "/home/runner/work/Trickcal-Bottleneck-Server/Trickcal-Bottleneck-Server/server/.verification/linux-deployment/host/releases/baseline-b802c59673ba267ed16b8d27b00bb7ad979c5c2d/GameServer",
+          "player_id": 1,
+          "heartbeats": 3,
+          "probe_ms": 226.127
+        },
+        "outcome": "healthy",
+        "elapsed_seconds": 2.075
+      },
+      {
+        "staged": "broken-runtime-config",
+        "files": 396
+      },
+      {
+        "action": "activate",
+        "from": "baseline-b802c59673ba267ed16b8d27b00bb7ad979c5c2d",
+        "target": "broken-runtime-config",
+        "source_commit": "5374916dce8e4f1bcda1b3277f4e5a878ac17f21",
+        "timestamp_utc": "2026-11-14T20:23:55Z",
+        "error": "systemd service exited before readiness",
+        "ready": {
+          "release": "baseline-b802c59673ba267ed16b8d27b00bb7ad979c5c2d",
+          "pid": 4115,
+          "executable": "/home/runner/work/Trickcal-Bottleneck-Server/Trickcal-Bottleneck-Server/server/.verification/linux-deployment/host/releases/baseline-b802c59673ba267ed16b8d27b00bb7ad979c5c2d/GameServer",
+          "player_id": 1,
+          "heartbeats": 3,
+          "probe_ms": 183.777
+        },
+        "outcome": "automatically_rolled_back",
+        "elapsed_seconds": 2.043
+      },
+      {
+        "outcome": "refused",
+        "error": "Release checksum/file inventory mismatch"
+      }
+    ],
+    "state_checks": [
+      {
+        "phase": "after_candidate",
+        "player_id": 2,
+        "state": {
+          "wallet": [
+            0,
+            600,
+            0
+          ],
+          "power": 1785
+        },
+        "sql": {
+          "wallet": "0|600|0",
+          "power": "1785",
+          "characters": "1|1|1\n2|1|1\n3|1|1\n4|1|1"
+        },
+        "receipt_sha256": "2b7b6cdebb72e9b5a8a5c15daadffcadff430a55fedcb3d5715dae57cb892f73"
+      },
+      {
+        "phase": "after_manual_rollback",
+        "player_id": 2,
+        "state": {
+          "wallet": [
+            0,
+            600,
+            0
+          ],
+          "power": 1785
+        },
+        "sql": {
+          "wallet": "0|600|0",
+          "power": "1785",
+          "characters": "1|1|1\n2|1|1\n3|1|1\n4|1|1"
+        },
+        "receipt_sha256": "2b7b6cdebb72e9b5a8a5c15daadffcadff430a55fedcb3d5715dae57cb892f73"
+      },
+      {
+        "phase": "after_automatic_rollback",
+        "player_id": 2,
+        "state": {
+          "wallet": [
+            0,
+            600,
+            0
+          ],
+          "power": 1785
+        },
+        "sql": {
+          "wallet": "0|600|0",
+          "power": "1785",
+          "characters": "1|1|1\n2|1|1\n3|1|1\n4|1|1"
+        },
+        "receipt_sha256": "2b7b6cdebb72e9b5a8a5c15daadffcadff430a55fedcb3d5715dae57cb892f73"
+      }
+    ],
+    "scope": "single-host stop/restart with schema-compatible artifacts; not zero downtime",
+    "baseline_dll_sha256": "cc2a9ea1d72bbe8c8c8321271921ac35fa04fc8b31195532b427294e4d22e561",
+    "candidate_dll_sha256": "5c5eaf16fd6f969af2f0e057b9b45cb027af5656fa96077e689e1a2ce37ec695",
+    "external_config_unchanged": true,
+    "damaged_artifact_refused": true,
+    "final_release": "baseline-b802c59673ba267ed16b8d27b00bb7ad979c5c2d",
+    "final_pid": 4115
+  },
+  "service_after_stop": {
+    "MainPID": "0",
+    "ExecStart": "{ path=/home/runner/work/Trickcal-Bottleneck-Server/Trickcal-Bottleneck-Server/server/.verification/linux-deployment/host/current/GameServer ; argv[]=/home/runner/work/Trickcal-Bottleneck-Server/Trickcal-Bottleneck-Server/server/.verification/linux-deployment/host/current/GameServer ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }",
+    "WorkingDirectory": "/home/runner/work/Trickcal-Bottleneck-Server/Trickcal-Bottleneck-Server/server/.verification/linux-deployment/host/shared",
+    "ActiveState": "inactive",
+    "SubState": "dead"
+  },
+  "source_files": [
+    {
+      "path": "linux-deployment/host/events.jsonl",
+      "bytes": 2563,
+      "sha256": "fdc872c9ac343f258f4cdeb9e3cfce6503fa3d7728a9a29bf510fbadc10ecdd0"
+    },
+    {
+      "path": "linux-deployment/journal.log",
+      "bytes": 88241,
+      "sha256": "b7f2d5b9c6877f4436bb678123b1e9f04bc3dbf517deafa82f48eb50b8222c72"
+    },
+    {
+      "path": "linux-deployment/service-final.json",
+      "bytes": 614,
+      "sha256": "5e8d6918ba697537475f939a2b96eea661455b6f90764e46ebff0aeb9bb08240"
+    },
+    {
+      "path": "linux-deployment/service.unit",
+      "bytes": 666,
+      "sha256": "47dca339c147612b37e9da963f9dd29e109947b02c1f78c91d49a0f7890102ce"
+    },
+    {
+      "path": "linux-deployment/summary.json",
+      "bytes": 5333,
+      "sha256": "5593b40ca4f8c9ed32be4463c843c8d63f04abb21d397fb88c2f131476953d75"
+    },
+    {
+      "path": "linux-deployment.log",
+      "bytes": 317,
+      "sha256": "f7a11178db010b6989ab726d53a550fbec83fe1c25ad7f058538a932159e8228"
+    },
+    {
+      "path": "linux-publish-a.log",
+      "bytes": 726,
+      "sha256": "9bcd6d83e9355b3f8c9190a1372b3319457c77e3459de9cef45f960a9c28b685"
+    },
+    {
+      "path": "linux-publish-b.log",
+      "bytes": 633,
+      "sha256": "32d0d146df2d60c222671f1b9ee57e9b01ae08080e55abdeeda12fdb9eb82f11"
+    }
+  ],
+  "limitations": [
+    "single hosted Linux runner, disposable PostgreSQL/Redis",
+    "same game logic; different commit/build identity",
+    "one observed run; timings are not guaranteed RTO or end-user downtime",
+    "stop/restart, existing TCP session closes",
+    "application rollback only, no schema/data rollback",
+    "shutdown-time Orleans management warnings observed"
+  ]
+}

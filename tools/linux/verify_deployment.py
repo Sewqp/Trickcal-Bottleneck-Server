@@ -210,8 +210,8 @@ LimitNOFILE=16384
                 require(exchange(connection, 9000) == (9000, b""), "Heartbeat failed")
             require(player_state(player) == state, "Redis wallet/power changed")
             stored = db_state(player)
-            require(stored["wallet"] == "|".join(map(str, state["wallet"])), "Graceful stop did not persist wallet")
-            require(stored["power"] == str(state["power"]), "Graceful stop did not persist power")
+            require(stored["wallet"] == "|".join(map(str, state["wallet"])), "Post-restart SQL wallet differs from expected state")
+            require(stored["power"] == str(state["power"]), "Post-restart SQL power differs from expected state")
             observations.append({"phase": label, "player_id": player, "state": state,
                                  "sql": stored, "receipt_sha256": hashlib.sha256(receipt[1]).hexdigest()})
             return stored
