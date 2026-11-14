@@ -1,0 +1,65 @@
+name: Server correctness and recovery
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: checks
+          POSTGRES_DB: trickcal_checks_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: server
+        shell: bash
+    env:
+      TRICKCAL_TEST_POSTGRES: Host=127.0.0.1;Port=5432;Database=trickcal_checks_ci;Username=postgres;Password=checks
+      TRICKCAL_TEST_REDIS: 127.0.0.1:6379,defaultDatabase=0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: server
+      - uses: actions/checkout@v4
+        with:
+          repository: Sewqp/llm-local-apm
+          ref: 027d8d87cd9eec983521cbf767befb8c5ffc8075
+          path: apm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build
+        run: |
+          mkdir -p .verification
+          dotnet build tests/GameServer.Checks/GameServer.Checks.csproj -c Release --nologo -m:1 2>&1 | tee .verification/build.log
+      - name: Domain, storage, Orleans, TCP checks
+        run: dotnet tests/GameServer.Checks/bin/Release/net10.0/GameServer.Checks.dll --integration 2>&1 | tee .verification/integration.log
+      - name: Kill and restart real server
+        env:
+          TRICKCAL_TEST_REDIS: 127.0.0.1:6379,defaultDatabase=1
+        run: python3 tools/check_crash_recovery.py 2>&1 | tee .verification/crash-recovery.log
+      - name: Upload verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-check-logs
+          path: |
+            server/.verification/
+            server/logs/
+          retention-days: 7
