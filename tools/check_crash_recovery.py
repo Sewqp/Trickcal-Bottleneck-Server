@@ -95,7 +95,7 @@ def start(fault):
                TCP_PORT=str(tcp), ORLEANS_SILO_PORT=str(port()), ORLEANS_GATEWAY_PORT=str(port()),
                DASHBOARD_PORT=str(port()), ORLEANS_CLUSTER_ID="crash-check-" + uuid.uuid4().hex,
                TRICKCAL_ENABLE_FAULT_INJECTION="1", TRICKCAL_ENABLE_DEBUG_COMMANDS="0",
-               TRICKCAL_GACHA_FAULT=fault, WATCH_PLAYER_NAME="", APM_ENABLED="false")
+               TRICKCAL_GACHA_FAULT=fault, WATCH_PLAYER_NAME="", APM_ENABLED="0")
     log = open(ARTIFACTS / ("crash-" + ("injected" if fault else "recovered") + ".log"), "w", encoding="utf-8")
     logs.append(log)
     process = subprocess.Popen(["dotnet", str(ROOT / "src/GameServer/bin/Release/net10.0/GameServer.dll")],
