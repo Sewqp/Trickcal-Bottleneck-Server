@@ -1,0 +1,84 @@
+name: Linux deployment and rollback
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: checks
+          POSTGRES_DB: trickcal_checks_deploy
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        shell: bash
+        working-directory: server
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGDATABASE: trickcal_checks_deploy
+      PGUSER: postgres
+      PGPASSWORD: checks
+      DEPLOY_TEST_REDIS_PORT: "6379"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: server
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Sewqp/Trickcal-Bottleneck-Server
+          ref: b802c59673ba267ed16b8d27b00bb7ad979c5c2d
+          path: baseline
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Sewqp/llm-local-apm
+          ref: 027d8d87cd9eec983521cbf767befb8c5ffc8075
+          path: apm
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Publish baseline and candidate Linux artifacts
+        run: |
+          mkdir -p .verification
+          candidate_commit=$(git rev-parse HEAD)
+          baseline_commit=$(git -C ../baseline rev-parse HEAD)
+          dotnet publish ../baseline/src/GameServer/GameServer.csproj -c Release -r linux-x64 --self-contained true -p:InformationalVersion=0.1.0+$baseline_commit -o "$PWD/.verification/publish-a" --nologo -m:1 2>&1 | tee .verification/linux-publish-a.log
+          dotnet publish src/GameServer/GameServer.csproj -c Release -r linux-x64 --self-contained true -p:InformationalVersion=0.1.0+$candidate_commit -o "$PWD/.verification/publish-b" --nologo -m:1 2>&1 | tee .verification/linux-publish-b.log
+          python3 tools/linux/release.py package .verification/publish-a baseline-$baseline_commit "$baseline_commit"
+          python3 tools/linux/release.py package .verification/publish-b candidate-$candidate_commit "$candidate_commit"
+      - name: Deploy, smoke test, rollback and verify persistent state
+        run: |
+          psql --version
+          systemctl --version
+          python3 tools/linux/verify_deployment.py .verification/publish-a .verification/publish-b --output .verification/linux-deployment 2>&1 | tee .verification/linux-deployment.log
+      - name: Upload deployment evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-deployment-evidence
+          path: |
+            server/.verification/linux-*.log
+            server/.verification/linux-deployment/summary.json
+            server/.verification/linux-deployment/journal.log
+            server/.verification/linux-deployment/service-final.json
+            server/.verification/linux-deployment/service.unit
+            server/.verification/linux-deployment/host/events.jsonl
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
