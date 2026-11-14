@@ -63,3 +63,5 @@ jobs:
             server/.verification/
             server/logs/
           retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: error
