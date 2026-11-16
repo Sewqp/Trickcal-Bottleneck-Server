@@ -24,6 +24,11 @@ public sealed class ApmReporter : IAsyncDisposable
             UserHashKey = key is null ? null : Encoding.UTF8.GetBytes(key),
             DetailSampleRate = ReadNumber("APM_DETAIL_SAMPLE_RATE", 0.01),
             SlowTraceMs = ReadNumber("APM_SLOW_TRACE_MS", 100),
+            AggregateHeartbeats = Environment.GetEnvironmentVariable("APM_AGGREGATE_HEARTBEATS") != "0",
+            MaxBufferedTraces = 16384,
+            TraceUserIds = (Environment.GetEnvironmentVariable("APM_TRACE_USER_IDS") ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(long.Parse).Distinct().ToArray(),
             SpoolDirectory = Environment.GetEnvironmentVariable("APM_SPOOL_DIRECTORY")
                 ?? Path.Combine(AppContext.BaseDirectory, ".apm-spool"),
             ActiveSessions = () => SessionManager.Instance.Count
