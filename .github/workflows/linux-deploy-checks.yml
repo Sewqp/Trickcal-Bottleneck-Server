@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Sewqp/llm-local-apm
-          ref: 027d8d87cd9eec983521cbf767befb8c5ffc8075
+          ref: 46f3d5a3760951c611ed099ee623ac41192f490c
           path: apm
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
